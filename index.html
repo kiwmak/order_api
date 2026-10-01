@@ -1,0 +1,1493 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Order Management System</title>
+  <style>
+    :root {
+      --bg: #f4f6f9;
+      --card: #ffffff;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --danger: #dc2626;
+      --text: #1e293b;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --success: #16a34a;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", "Noto Sans", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+    header {
+      background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+      color: white;
+      padding: 1.25rem 1.5rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,.15);
+    }
+    header h1 { font-size: 1.35rem; font-weight: 600; }
+    header p { font-size: 0.85rem; opacity: .85; }
+    .lang-switch {
+      display: flex;
+      gap: 0.35rem;
+      background: rgba(255,255,255,.15);
+      border-radius: 8px;
+      padding: 0.25rem;
+    }
+    .lang-switch button {
+      background: transparent;
+      border: none;
+      color: white;
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      opacity: .8;
+    }
+    .lang-switch button.active {
+      background: white;
+      color: #1e3a5f;
+      opacity: 1;
+      font-weight: 600;
+    }
+    main { max-width: 1400px; margin: 0 auto; padding: 1.5rem; }
+    .card {
+      background: var(--card);
+      border-radius: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.08);
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+    .card h2 {
+      font-size: 1.05rem;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      padding: 1.5rem;
+      text-align: center;
+      transition: border-color .2s, background .2s;
+      cursor: pointer;
+    }
+    .upload-zone:hover, .upload-zone.dragover {
+      border-color: var(--primary);
+      background: #eff6ff;
+    }
+    .upload-zone input[type=file] { display: none; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.55rem 1.1rem;
+      border-radius: 8px;
+      border: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-danger { background: #fef2f2; color: var(--danger); border: 1px solid #fecaca; }
+    .btn-danger:hover { background: #fee2e2; }
+    .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+    .btn-ghost:hover { background: #f8fafc; }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+    .search-box {
+      flex: 1;
+      min-width: 200px;
+      padding: 0.55rem 0.9rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.9rem;
+      outline: none;
+    }
+    .search-box:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
+    .stats { color: var(--muted); font-size: 0.85rem; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+    th, td {
+      padding: 0.65rem 0.75rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    th {
+      background: #f8fafc;
+      font-weight: 600;
+      color: var(--muted);
+      white-space: nowrap;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    tr:hover td { background: #f8fafc; }
+    tbody tr.row-click {
+      cursor: pointer;
+    }
+    tbody tr.row-click:hover td {
+      background: #eff6ff;
+    }
+    .table-wrap {
+      overflow-x: auto;
+      max-height: 65vh;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      background: #eff6ff;
+      color: #1d4ed8;
+    }
+    .empty {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: var(--muted);
+    }
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(15,23,42,.45);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: white;
+      border-radius: 14px;
+      max-width: 720px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 50px rgba(0,0,0,.2);
+    }
+    .modal-header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      background: white;
+      z-index: 2;
+    }
+    .modal-header h3 { font-size: 1.05rem; }
+    .modal-body { padding: 1.25rem; }
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem 1.25rem;
+    }
+    @media (max-width: 600px) {
+      .detail-grid { grid-template-columns: 1fr; }
+    }
+    .detail-item label {
+      display: block;
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 0.15rem;
+    }
+    .detail-item span {
+      font-size: 0.9rem;
+      word-break: break-word;
+    }
+    .detail-item.full { grid-column: 1 / -1; }
+    .toast {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      background: #1e293b;
+      color: white;
+      padding: 0.75rem 1.25rem;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      box-shadow: 0 8px 24px rgba(0,0,0,.2);
+      transform: translateY(120%);
+      transition: transform .3s;
+      z-index: 200;
+      max-width: 360px;
+    }
+    .toast.show { transform: translateY(0); }
+    .toast.success { background: var(--success); }
+    .toast.error { background: var(--danger); }
+    .link-api {
+      color: rgba(255,255,255,.85);
+      font-size: 0.8rem;
+      text-decoration: none;
+    }
+    .link-api:hover { text-decoration: underline; }
+
+    /* Product image thumbnail */
+    .thumb {
+      width: 52px;
+      height: 52px;
+      object-fit: cover;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      cursor: zoom-in;
+      transition: transform .15s, box-shadow .15s;
+      background: #f1f5f9;
+    }
+    .thumb:hover {
+      transform: scale(1.08);
+      box-shadow: 0 4px 12px rgba(0,0,0,.15);
+    }
+    .thumb-placeholder {
+      width: 52px;
+      height: 52px;
+      border-radius: 8px;
+      background: #f1f5f9;
+      border: 1px dashed var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #cbd5e1;
+      font-size: 1.2rem;
+    }
+    .detail-img {
+      max-width: 220px;
+      max-height: 220px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      cursor: zoom-in;
+      object-fit: contain;
+      background: #f8fafc;
+    }
+
+    /* Lightbox */
+    .lightbox {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.88);
+      z-index: 300;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      cursor: zoom-out;
+    }
+    .lightbox.open { display: flex; }
+    .lightbox img {
+      max-width: min(92vw, 900px);
+      max-height: 88vh;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.5);
+      object-fit: contain;
+      cursor: default;
+    }
+    .lightbox-close {
+      position: absolute;
+      top: 1rem;
+      right: 1.25rem;
+      background: rgba(255,255,255,.15);
+      border: none;
+      color: white;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      font-size: 1.4rem;
+      cursor: pointer;
+      line-height: 1;
+    }
+    .lightbox-close:hover { background: rgba(255,255,255,.3); }
+
+    /* Nav tabs */
+    .nav-tabs {
+      display: flex;
+      gap: 0.35rem;
+      background: rgba(255,255,255,.12);
+      border-radius: 10px;
+      padding: 0.3rem;
+    }
+    .nav-tabs button {
+      background: transparent;
+      border: none;
+      color: white;
+      padding: 0.45rem 1rem;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      opacity: .85;
+    }
+    .nav-tabs button.active {
+      background: white;
+      color: #1e3a5f;
+      font-weight: 600;
+      opacity: 1;
+    }
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    /* KPI cards */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+    .kpi-card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 1rem 1.15rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,.08);
+      border: 1px solid var(--border);
+    }
+    .kpi-card .label { font-size: 0.78rem; color: var(--muted); margin-bottom: 0.35rem; }
+    .kpi-card .value { font-size: 1.55rem; font-weight: 700; color: #1e3a5f; }
+
+    .charts-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+    @media (max-width: 900px) {
+      .charts-grid { grid-template-columns: 1fr; }
+    }
+    .chart-card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 1rem 1.15rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,.08);
+      border: 1px solid var(--border);
+      min-height: 300px;
+    }
+    .chart-card h3 { font-size: 0.95rem; margin-bottom: 0.75rem; color: var(--text); }
+    .chart-wrap { position: relative; height: 260px; }
+
+    .dash-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    .dash-table th, .dash-table td {
+      padding: 0.5rem 0.65rem;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+    }
+    .dash-table th { color: var(--muted); font-weight: 600; background: #f8fafc; }
+
+    /* Notification bell */
+    .notif-wrap { position: relative; }
+    .notif-btn {
+      background: rgba(255,255,255,.15);
+      border: none;
+      color: white;
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 1.15rem;
+      position: relative;
+    }
+    .notif-btn:hover { background: rgba(255,255,255,.25); }
+    .notif-badge {
+      display: none;
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      background: #ef4444;
+      color: white;
+      font-size: 0.7rem;
+      font-weight: 700;
+      min-width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      align-items: center;
+      justify-content: center;
+      padding: 0 4px;
+    }
+    .notif-badge.show { display: flex; }
+    .notif-panel {
+      display: none;
+      position: absolute;
+      right: 0;
+      top: calc(100% + 8px);
+      width: 320px;
+      background: white;
+      color: var(--text);
+      border-radius: 12px;
+      box-shadow: 0 12px 40px rgba(0,0,0,.2);
+      z-index: 50;
+      overflow: hidden;
+    }
+    .notif-panel.open { display: block; }
+    .notif-panel-header {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+    .notif-list { max-height: 280px; overflow-y: auto; }
+    .notif-item {
+      padding: 0.65rem 1rem;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.82rem;
+    }
+    .notif-item:hover { background: #f8fafc; }
+    .notif-empty { padding: 1.25rem; text-align: center; color: var(--muted); font-size: 0.85rem; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header>
+    <div>
+      <h1 id="ui-title">Order Management System</h1>
+      <p id="ui-subtitle">Import & View Order Details</p>
+    </div>
+    <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+      <div class="nav-tabs">
+        <button type="button" data-panel="dashboard" class="active" id="tab-dashboard">Dashboard</button>
+        <button type="button" data-panel="orders" id="tab-orders">Orders</button>
+      </div>
+      <div class="notif-wrap">
+        <button type="button" class="notif-btn" id="notifBtn" title="Notifications">🔔<span class="notif-badge" id="notifBadge">0</span></button>
+        <div class="notif-panel" id="notifPanel">
+          <div class="notif-panel-header">
+            <span id="ui-notify-title">New orders</span>
+            <button type="button" class="btn btn-ghost" style="padding:0.25rem 0.5rem;font-size:0.75rem;" id="markReadBtn">Mark as read</button>
+          </div>
+          <div class="notif-list" id="notifList"><div class="notif-empty">—</div></div>
+        </div>
+      </div>
+      <span id="userLabel" style="font-size:0.85rem;opacity:.9;"></span>
+      <button type="button" class="btn" id="loginBtn" style="background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.35);">Login</button>
+      <button type="button" class="btn auth-only" id="changePassBtn" style="display:none;background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.35);">Đổi MK</button>
+      <button type="button" class="btn" id="logoutBtn" style="display:none;background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.35);">Logout</button>
+      <a class="link-api" href="/docs" target="_blank" id="ui-api-docs">API Docs ↗</a>
+      <div class="lang-switch">
+        <button data-lang="vi" class="active">VI</button>
+        <button data-lang="en">EN</button>
+        <button data-lang="zh">中文</button>
+      </div>
+    </div>
+  </header>
+  <div id="guestBanner" style="background:#fef3c7;color:#92400e;padding:0.5rem 1.5rem;font-size:0.85rem;text-align:center;display:none;"></div>
+
+  <main>
+    <!-- ========== DASHBOARD ========== -->
+    <div class="panel active" id="panel-dashboard">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:0.75rem;">
+        <button type="button" class="btn btn-ghost" id="dashRefreshBtn"><span id="ui-refresh">Refresh</span></button>
+      </div>
+      <div class="kpi-grid" id="kpiGrid"></div>
+      <div class="charts-grid">
+        <div class="chart-card">
+          <h3 id="ui-chart-customer">By customer</h3>
+          <div class="chart-wrap"><canvas id="chartCustomer"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3 id="ui-chart-item">By item code</h3>
+          <div class="chart-wrap"><canvas id="chartItem"></canvas></div>
+          <div id="itemChartInfo" style="margin-top:0.75rem;padding:0.75rem 0.9rem;background:#f8fafc;border-radius:8px;border:1px solid var(--border);font-size:0.82rem;min-height:3.2rem;color:var(--muted);">
+            —
+          </div>
+        </div>
+      </div>
+      <div class="charts-grid">
+        <div class="chart-card">
+          <h3 id="ui-chart-order">By order</h3>
+          <div class="table-wrap" style="max-height:280px;border:none;">
+            <table class="dash-table">
+              <thead><tr>
+                <th id="th-ord-no">Order</th>
+                <th id="th-ord-cust">Customer</th>
+                <th>Lines</th>
+                <th>Qty</th>
+              </tr></thead>
+              <tbody id="orderStatsBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="chart-card">
+          <h3 id="ui-recent">Recent imports</h3>
+          <div class="table-wrap" style="max-height:280px;border:none;">
+            <table class="dash-table">
+              <thead><tr>
+                <th></th>
+                <th>Order</th>
+                <th>Item</th>
+                <th>Customer</th>
+                <th>Qty</th>
+              </tr></thead>
+              <tbody id="recentBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== ORDERS ========== -->
+    <div class="panel" id="panel-orders">
+    <!-- Upload (login required) -->
+    <div class="card auth-only" id="uploadCard" style="display:none;">
+      <h2>📥 <span id="ui-upload">Upload Excel File</span></h2>
+      <div class="upload-zone" id="dropzone">
+        <p style="margin-bottom:0.75rem;color:var(--muted);font-size:0.9rem;">
+          .xlsx / .xls — chọn nhiều file cùng lúc · 支持中文表头
+        </p>
+        <input type="file" id="fileInput" accept=".xlsx,.xls" multiple />
+        <button class="btn btn-primary" id="uploadBtn" disabled>
+          <span id="ui-upload-btn">Import Orders</span>
+        </button>
+        <div id="fileName" style="margin-top:0.75rem;font-size:0.85rem;color:var(--muted);text-align:left;max-width:520px;margin-left:auto;margin-right:auto;"></div>
+      </div>
+    </div>
+
+    <!-- List -->
+    <div class="card">
+      <h2>📋 <span id="ui-orders-list">Orders List</span></h2>
+      <div class="toolbar">
+        <input type="text" class="search-box" id="searchInput" placeholder="Search..." />
+        <span class="stats" id="statsText"></span>
+        <button class="btn btn-danger auth-only" id="clearBtn" style="margin-left:auto;display:none;">
+          <span id="ui-delete-all">Clear All Data</span>
+        </button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr id="theadRow"></tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+        <div class="empty" id="emptyState" style="display:none;">
+          <p id="ui-no-data">No data yet. Please import an Excel file.</p>
+        </div>
+      </div>
+    </div>
+    </div><!-- /panel-orders -->
+  </main>
+
+  <!-- Detail Modal -->
+  <div class="modal-overlay" id="modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modalTitle">Detail</h3>
+        <div style="display:flex;gap:0.5rem;align-items:center;">
+          <button type="button" class="btn btn-ghost auth-only" id="editBtn" style="display:none;font-size:0.85rem;">Edit</button>
+          <button type="button" class="btn btn-danger auth-only" id="deleteItemBtn" style="display:none;font-size:0.85rem;padding:0.35rem 0.7rem;">Delete</button>
+          <button class="btn btn-ghost" id="modalClose">✕</button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="detail-grid" id="detailGrid"></div>
+        <div id="editForm" style="display:none;"></div>
+        <div id="editActions" style="display:none;margin-top:1rem;gap:0.5rem;" class="toolbar">
+          <button type="button" class="btn btn-primary" id="saveEditBtn">Save</button>
+          <button type="button" class="btn btn-ghost" id="cancelEditBtn">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Login Modal -->
+  <div class="modal-overlay" id="loginModal">
+    <div class="modal" style="max-width:380px;">
+      <div class="modal-header">
+        <h3 id="loginModalTitle">Login</h3>
+        <button class="btn btn-ghost" id="loginModalClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="margin-bottom:0.85rem;">
+          <label style="display:block;font-size:0.8rem;color:var(--muted);margin-bottom:0.25rem;" id="lblUser">Username</label>
+          <input type="text" id="loginUser" class="search-box" style="width:100%;" autocomplete="username" />
+        </div>
+        <div style="margin-bottom:1rem;">
+          <label style="display:block;font-size:0.8rem;color:var(--muted);margin-bottom:0.25rem;" id="lblPass">Password</label>
+          <input type="password" id="loginPass" class="search-box" style="width:100%;" autocomplete="current-password" />
+        </div>
+        <button type="button" class="btn btn-primary" id="loginSubmit" style="width:100%;">Login</button>
+        <p style="margin-top:0.75rem;font-size:0.75rem;color:var(--muted);text-align:center;">Default: admin / admin123</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Change Password Modal -->
+  <div class="modal-overlay" id="changePassModal">
+    <div class="modal" style="max-width:400px;">
+      <div class="modal-header">
+        <h3 id="changePassTitle">Change password</h3>
+        <button class="btn btn-ghost" id="changePassClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="margin-bottom:0.85rem;">
+          <label style="display:block;font-size:0.8rem;color:var(--muted);margin-bottom:0.25rem;" id="lblOldPass">Current password</label>
+          <input type="password" id="oldPass" class="search-box" style="width:100%;" autocomplete="current-password" />
+        </div>
+        <div style="margin-bottom:0.85rem;">
+          <label style="display:block;font-size:0.8rem;color:var(--muted);margin-bottom:0.25rem;" id="lblNewPass">New password</label>
+          <input type="password" id="newPass" class="search-box" style="width:100%;" autocomplete="new-password" />
+        </div>
+        <div style="margin-bottom:1rem;">
+          <label style="display:block;font-size:0.8rem;color:var(--muted);margin-bottom:0.25rem;" id="lblConfirmPass">Confirm new password</label>
+          <input type="password" id="confirmPass" class="search-box" style="width:100%;" autocomplete="new-password" />
+        </div>
+        <button type="button" class="btn btn-primary" id="changePassSubmit" style="width:100%;">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <!-- Image Lightbox -->
+  <div class="lightbox" id="lightbox" onclick="closeLightbox(event)">
+    <button type="button" class="lightbox-close" onclick="closeLightbox(event)" title="Close">✕</button>
+    <img id="lightboxImg" src="" alt="Product" onclick="event.stopPropagation()" />
+  </div>
+
+  <script>
+    // ---- i18n data from server ----
+    const FIELD_LABELS = {{ field_labels | tojson }};
+    const UI = {{ ui | tojson }};
+
+    let lang = localStorage.getItem("order_lang") || "vi";
+    let orders = [];
+    let selectedFiles = [];  // File[] — multiple files
+    let authToken = localStorage.getItem("order_token") || "";
+    let authUser = localStorage.getItem("order_user") || "";
+    let currentDetailId = null;
+    let editMode = false;
+
+    const EDITABLE_FIELDS = [
+      "customer_name", "order_number", "customer_order_number", "item_code", "customer_item_code",
+      "sub_item_code", "main_category", "sub_category", "description", "container_size",
+      "container_process", "order_qty", "unit_wax_weight_g", "wax_material", "wax_color",
+      "fragrance_name", "fragrance_code", "fragrance_company", "fragrance_ratio",
+      "salesperson", "merchandiser", "packaging_detail", "remarks", "quality_requirement"
+    ];
+
+    function isLoggedIn() { return !!authToken; }
+
+    function authHeaders(extra) {
+      const h = Object.assign({}, extra || {});
+      if (authToken) h["Authorization"] = "Bearer " + authToken;
+      return h;
+    }
+
+    async function authFetch(url, opts) {
+      opts = opts || {};
+      opts.headers = authHeaders(opts.headers || {});
+      const res = await fetch(url, opts);
+      if (res.status === 401) {
+        authToken = "";
+        authUser = "";
+        localStorage.removeItem("order_token");
+        localStorage.removeItem("order_user");
+        applyAuthUI();
+        showToast(t("need_login"), "error");
+      }
+      return res;
+    }
+
+    function applyAuthUI() {
+      const logged = isLoggedIn();
+      document.querySelectorAll(".auth-only").forEach(el => {
+        el.style.display = logged ? "" : "none";
+      });
+      const loginBtn = document.getElementById("loginBtn");
+      const logoutBtn = document.getElementById("logoutBtn");
+      const userLabel = document.getElementById("userLabel");
+      const guestBanner = document.getElementById("guestBanner");
+      if (loginBtn) loginBtn.style.display = logged ? "none" : "";
+      if (logoutBtn) logoutBtn.style.display = logged ? "" : "none";
+      if (userLabel) userLabel.textContent = logged ? ("👤 " + authUser) : "";
+      if (guestBanner) {
+        guestBanner.style.display = logged ? "none" : "block";
+        guestBanner.textContent = t("guest_hint");
+      }
+      // Re-enable upload button state only if files selected
+      const ub = document.getElementById("uploadBtn");
+      if (ub && logged) ub.disabled = !selectedFiles.length;
+    }
+
+    // Columns shown in table (key fields) — product_image first
+    const TABLE_COLS = [
+      "product_image", "order_number", "customer_name", "item_code", "customer_item_code", "description",
+      "order_qty", "container_size", "fragrance_name", "salesperson", "merchandiser"
+    ];
+
+    // All fields for detail view (image first)
+    const ALL_FIELDS = ["product_image", ...Object.keys(FIELD_LABELS).filter(k => k !== "product_image")];
+
+    function t(key, n) {
+      const o = UI[key];
+      if (!o) return key;
+      let s = o[lang] || o.en || key;
+      if (n !== undefined) s = s.replace("{n}", n);
+      return s;
+    }
+
+    function fl(key) {
+      const o = FIELD_LABELS[key];
+      if (!o) return key;
+      return o[lang] || o.en || key;
+    }
+
+    function applyLang() {
+      document.getElementById("ui-title").textContent = t("title");
+      document.getElementById("ui-subtitle").textContent = t("subtitle");
+      document.getElementById("ui-upload").textContent = t("upload");
+      document.getElementById("ui-upload-btn").textContent = t("upload_btn");
+      document.getElementById("ui-orders-list").textContent = t("orders_list");
+      document.getElementById("ui-delete-all").textContent = t("delete_all");
+      document.getElementById("ui-no-data").textContent = t("no_data");
+      document.getElementById("ui-api-docs").textContent = t("api_docs") + " ↗";
+      document.getElementById("searchInput").placeholder = t("search");
+      document.getElementById("tab-dashboard").textContent = t("nav_dashboard");
+      document.getElementById("tab-orders").textContent = t("nav_orders");
+      document.getElementById("ui-chart-customer").textContent = t("chart_customer");
+      document.getElementById("ui-chart-item").textContent = t("chart_item");
+      document.getElementById("ui-chart-order").textContent = t("chart_order");
+      document.getElementById("ui-recent").textContent = t("recent_imports");
+      document.getElementById("ui-notify-title").textContent = t("notify_title");
+      document.getElementById("ui-refresh").textContent = t("refresh");
+      document.getElementById("markReadBtn").textContent = t("mark_read");
+      const lb = document.getElementById("loginBtn");
+      const lob = document.getElementById("logoutBtn");
+      if (lb) lb.textContent = t("login");
+      if (lob) lob.textContent = t("logout");
+      const cpb = document.getElementById("changePassBtn");
+      if (cpb) cpb.textContent = t("change_password");
+      const eb = document.getElementById("editBtn");
+      const db = document.getElementById("deleteItemBtn");
+      const sb = document.getElementById("saveEditBtn");
+      if (eb) eb.textContent = t("edit");
+      if (db) db.textContent = t("delete");
+      if (sb) sb.textContent = t("save");
+      const gb = document.getElementById("guestBanner");
+      if (gb && !isLoggedIn()) gb.textContent = t("guest_hint");
+      document.querySelectorAll(".lang-switch button").forEach(b => {
+        b.classList.toggle("active", b.dataset.lang === lang);
+      });
+      renderTable();
+      loadDashboard();
+    }
+
+    function showToast(msg, type = "success") {
+      const el = document.getElementById("toast");
+      el.textContent = msg;
+      el.className = "toast show " + type;
+      setTimeout(() => el.classList.remove("show"), 3500);
+    }
+
+    // ---- Upload (multi-file) ----
+    const dropzone = document.getElementById("dropzone");
+    const fileInput = document.getElementById("fileInput");
+    const uploadBtn = document.getElementById("uploadBtn");
+
+    function isExcel(f) {
+      const n = (f.name || "").toLowerCase();
+      return n.endsWith(".xlsx") || n.endsWith(".xls");
+    }
+
+    function setSelectedFiles(fileList) {
+      selectedFiles = Array.from(fileList || []).filter(isExcel);
+      const box = document.getElementById("fileName");
+      if (!selectedFiles.length) {
+        box.innerHTML = "";
+        uploadBtn.disabled = true;
+        return;
+      }
+      const lines = selectedFiles.map((f, i) =>
+        `<div style="padding:0.15rem 0;">${i + 1}. ${esc(f.name)} <span style="opacity:.7">(${(f.size / 1024).toFixed(0)} KB)</span></div>`
+      ).join("");
+      box.innerHTML = `<strong>${selectedFiles.length} file(s):</strong>${lines}`;
+      uploadBtn.disabled = false;
+    }
+
+    dropzone.addEventListener("click", (e) => {
+      if (e.target !== uploadBtn && e.target.id !== "fileName" && !e.target.closest("#fileName")) {
+        fileInput.click();
+      }
+    });
+    dropzone.addEventListener("dragover", (e) => { e.preventDefault(); dropzone.classList.add("dragover"); });
+    dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
+    dropzone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropzone.classList.remove("dragover");
+      if (e.dataTransfer.files.length) setSelectedFiles(e.dataTransfer.files);
+    });
+    fileInput.addEventListener("change", () => setSelectedFiles(fileInput.files));
+
+    uploadBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      if (!selectedFiles.length) return;
+      uploadBtn.disabled = true;
+      uploadBtn.textContent = "...";
+      const fd = new FormData();
+      // FastAPI expects repeated field name "files" for List[UploadFile]
+      selectedFiles.forEach(f => fd.append("files", f));
+      try {
+        if (!isLoggedIn()) throw new Error(t("need_login"));
+        const res = await authFetch("/api/import", { method: "POST", body: fd });
+        const data = await res.json();
+        if (!res.ok) {
+          const detail = data.detail;
+          const msg = typeof detail === "string" ? detail
+            : Array.isArray(detail) ? detail.map(d => d.msg || JSON.stringify(d)).join("; ")
+            : (data.message || "Import failed");
+          throw new Error(msg);
+        }
+        showToast(data.message || t("import_success", data.imported_count), data.success ? "success" : "error");
+        selectedFiles = [];
+        fileInput.value = "";
+        document.getElementById("fileName").innerHTML = "";
+        await loadOrders();
+        await loadDashboard();
+        // Keep notification unread so user sees new orders
+        await pollNotifications(false);
+      } catch (err) {
+        showToast(err.message, "error");
+      } finally {
+        uploadBtn.disabled = !selectedFiles.length;
+        document.getElementById("ui-upload-btn").textContent = t("upload_btn");
+      }
+    });
+
+    // ---- Load & render ----
+    async function loadOrders(q = "") {
+      const url = q ? `/api/orders?q=${encodeURIComponent(q)}` : "/api/orders";
+      const res = await fetch(url);
+      orders = await res.json();
+      renderTable();
+    }
+
+    function renderTable() {
+      const thead = document.getElementById("theadRow");
+      const tbody = document.getElementById("tbody");
+      const empty = document.getElementById("emptyState");
+
+      thead.innerHTML = TABLE_COLS.map(c => `<th>${fl(c)}</th>`).join("") + `<th>${t("actions")}</th>`;
+
+      document.getElementById("statsText").textContent = t("total_items", orders.length);
+
+      if (!orders.length) {
+        tbody.innerHTML = "";
+        empty.style.display = "block";
+        return;
+      }
+      empty.style.display = "none";
+
+      tbody.innerHTML = orders.map(o => {
+        const cells = TABLE_COLS.map(c => {
+          if (c === "product_image") {
+            if (o.product_image) {
+              return `<td><img class="thumb" src="${o.product_image}" alt="" loading="lazy" onclick="event.stopPropagation(); openLightbox(this.src)" /></td>`;
+            }
+            return `<td><div class="thumb-placeholder">📷</div></td>`;
+          }
+          let v = o[c];
+          if (v == null) v = "—";
+          if (c === "description" && String(v).length > 40) v = String(v).slice(0, 40) + "…";
+          return `<td>${esc(String(v))}</td>`;
+        }).join("");
+        return `<tr class="row-click" onclick="showDetail(${o.id})">${cells}<td><button class="btn btn-ghost" style="padding:0.3rem 0.6rem;font-size:0.8rem;" onclick="event.stopPropagation(); showDetail(${o.id})">${t("detail")}</button></td></tr>`;
+      }).join("");
+    }
+
+    function esc(s) {
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function openLightbox(src) {
+      const box = document.getElementById("lightbox");
+      document.getElementById("lightboxImg").src = src;
+      box.classList.add("open");
+      document.body.style.overflow = "hidden";
+    }
+
+    function closeLightbox(e) {
+      if (e) e.stopPropagation();
+      document.getElementById("lightbox").classList.remove("open");
+      document.getElementById("lightboxImg").src = "";
+      document.body.style.overflow = "";
+    }
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        closeLightbox();
+        document.getElementById("modal").classList.remove("open");
+      }
+    });
+
+    function showDetail(id) {
+      const o = orders.find(x => x.id === id);
+      if (!o) return;
+      currentDetailId = id;
+      editMode = false;
+      document.getElementById("modalTitle").textContent = `${fl("item_code")}: ${o.item_code || "—"}`;
+      document.getElementById("detailGrid").style.display = "";
+      document.getElementById("editForm").style.display = "none";
+      document.getElementById("editActions").style.display = "none";
+      applyAuthUI();
+      const grid = document.getElementById("detailGrid");
+      grid.innerHTML = ALL_FIELDS.map(f => {
+        if (f === "product_image") {
+          if (o.product_image) {
+            return `<div class="detail-item full"><label>${fl(f)}</label>
+              <img class="detail-img" src="${o.product_image}" alt="" onclick="openLightbox(this.src)" />
+            </div>`;
+          }
+          return `<div class="detail-item full"><label>${fl(f)}</label><span>—</span></div>`;
+        }
+        let v = o[f];
+        if (v == null || v === "") v = "—";
+        const full = ["description", "packaging_detail", "fragrance_ratio", "remarks"].includes(f) ? " full" : "";
+        return `<div class="detail-item${full}"><label>${fl(f)}</label><span>${esc(String(v)).replace(/\n/g, "<br>")}</span></div>`;
+      }).join("");
+      document.getElementById("modal").classList.add("open");
+    }
+
+    function startEdit() {
+      if (!isLoggedIn() || currentDetailId == null) return;
+      const o = orders.find(x => x.id === currentDetailId);
+      if (!o) return;
+      editMode = true;
+      document.getElementById("detailGrid").style.display = "none";
+      const form = document.getElementById("editForm");
+      form.style.display = "grid";
+      form.style.gridTemplateColumns = "1fr 1fr";
+      form.style.gap = "0.75rem 1rem";
+      form.innerHTML = EDITABLE_FIELDS.map(f => {
+        const full = ["description", "packaging_detail", "fragrance_ratio", "remarks"].includes(f);
+        const val = o[f] != null ? String(o[f]) : "";
+        const input = full
+          ? `<textarea data-field="${f}" rows="3" class="search-box" style="width:100%;">${esc(val)}</textarea>`
+          : `<input data-field="${f}" class="search-box" style="width:100%;" value="${esc(val)}" />`;
+        return `<div class="detail-item${full ? " full" : ""}" style="${full ? "grid-column:1/-1" : ""}"><label>${fl(f)}</label>${input}</div>`;
+      }).join("");
+      document.getElementById("editActions").style.display = "flex";
+    }
+
+    async function saveEdit() {
+      if (!isLoggedIn() || currentDetailId == null) return;
+      const body = {};
+      document.querySelectorAll("#editForm [data-field]").forEach(el => {
+        let v = el.value;
+        const f = el.dataset.field;
+        if (f === "order_qty" || f === "wick_count" || f === "retail_pack_rate" || f === "unit_qty" || f === "outer_box_pack_rate") {
+          body[f] = v === "" ? null : parseInt(v, 10);
+        } else if (f === "unit_wax_weight_g") {
+          body[f] = v === "" ? null : parseFloat(v);
+        } else {
+          body[f] = v;
+        }
+      });
+      const res = await authFetch(`/api/orders/${currentDetailId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showToast(err.detail || "Save failed", "error");
+        return;
+      }
+      showToast(lang === "vi" ? "Đã lưu" : lang === "zh" ? "已保存" : "Saved");
+      await loadOrders();
+      await loadDashboard();
+      showDetail(currentDetailId);
+    }
+
+    async function deleteCurrentItem() {
+      if (!isLoggedIn() || currentDetailId == null) return;
+      if (!confirm(lang === "vi" ? "Xóa dòng này?" : lang === "zh" ? "删除此行？" : "Delete this row?")) return;
+      const res = await authFetch(`/api/orders/${currentDetailId}`, { method: "DELETE" });
+      if (!res.ok) {
+        showToast("Delete failed", "error");
+        return;
+      }
+      document.getElementById("modal").classList.remove("open");
+      showToast(lang === "vi" ? "Đã xóa" : "Deleted");
+      await loadOrders();
+      await loadDashboard();
+    }
+
+    document.getElementById("modalClose").addEventListener("click", () => {
+      document.getElementById("modal").classList.remove("open");
+    });
+    document.getElementById("modal").addEventListener("click", (e) => {
+      if (e.target.id === "modal") document.getElementById("modal").classList.remove("open");
+    });
+
+    // Search debounce
+    let searchTimer;
+    document.getElementById("searchInput").addEventListener("input", (e) => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => loadOrders(e.target.value.trim()), 300);
+    });
+
+    // Clear all
+    document.getElementById("clearBtn").addEventListener("click", async () => {
+      if (!isLoggedIn()) { showToast(t("need_login"), "error"); return; }
+      if (!confirm(lang === "zh" ? "确定清空所有数据？" : lang === "vi" ? "Xác nhận xóa tất cả dữ liệu?" : "Clear all data?")) return;
+      const res = await authFetch("/api/orders", { method: "DELETE" });
+      if (!res.ok) { showToast(t("need_login"), "error"); return; }
+      showToast(lang === "zh" ? "已清空" : lang === "vi" ? "Đã xóa hết" : "Cleared");
+      await loadOrders();
+      await loadDashboard();
+      localStorage.setItem("order_seen_max_id", "0");
+      await pollNotifications(true);
+    });
+
+    // Language switch
+    document.querySelectorAll(".lang-switch button").forEach(btn => {
+      btn.addEventListener("click", () => {
+        lang = btn.dataset.lang;
+        localStorage.setItem("order_lang", lang);
+        applyLang();
+      });
+    });
+
+    // ---- Tabs ----
+    document.querySelectorAll(".nav-tabs button").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".nav-tabs button").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+        document.getElementById("panel-" + btn.dataset.panel).classList.add("active");
+        if (btn.dataset.panel === "dashboard") loadDashboard();
+      });
+    });
+
+    // ---- Dashboard + Charts ----
+    let chartCustomer = null;
+    let chartItem = null;
+    const CHART_COLORS = [
+      "#2563eb", "#7c3aed", "#db2777", "#ea580c", "#16a34a",
+      "#0891b2", "#ca8a04", "#4f46e5", "#e11d48", "#0d9488"
+    ];
+
+    async function loadDashboard() {
+      try {
+        const res = await fetch("/api/dashboard?top=10");
+        if (!res.ok) return;
+        const data = await res.json();
+        renderKpis(data.kpis || {});
+        renderCustomerChart(data.by_customer || []);
+        renderItemChart(data.by_item || []);
+        renderOrderTable(data.by_order || []);
+        renderRecent(data.recent || []);
+      } catch (e) {
+        console.warn("dashboard", e);
+      }
+    }
+
+    function renderKpis(k) {
+      const items = [
+        { key: "kpi_items", val: k.total_items ?? 0 },
+        { key: "kpi_orders", val: k.distinct_orders ?? 0 },
+        { key: "kpi_customers", val: k.distinct_customers ?? 0 },
+        { key: "kpi_skus", val: k.distinct_items ?? 0 },
+        { key: "kpi_qty", val: k.total_qty ?? 0 },
+      ];
+      document.getElementById("kpiGrid").innerHTML = items.map(i =>
+        `<div class="kpi-card"><div class="label">${t(i.key)}</div><div class="value">${Number(i.val).toLocaleString()}</div></div>`
+      ).join("");
+    }
+
+    function destroyChart(c) {
+      if (c) { try { c.destroy(); } catch (_) {} }
+    }
+
+    function renderCustomerChart(rows) {
+      const ctx = document.getElementById("chartCustomer");
+      destroyChart(chartCustomer);
+      if (!rows.length) {
+        chartCustomer = null;
+        return;
+      }
+      chartCustomer = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels: rows.map(r => r.name),
+          datasets: [{
+            label: "Qty",
+            data: rows.map(r => r.qty),
+            backgroundColor: CHART_COLORS,
+            borderRadius: 6,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true } }
+        }
+      });
+    }
+
+    function showItemChartInfo(m) {
+      const box = document.getElementById("itemChartInfo");
+      if (!box) return;
+      if (!m) {
+        box.style.color = "var(--muted)";
+        box.innerHTML = lang === "vi"
+          ? "Di chuột hoặc click vào mã hàng trên biểu đồ để xem khách hàng & đơn hàng"
+          : lang === "zh" ? "将鼠标移到或点击货号查看客户和订单" : "Hover or click an item on the chart to see customers & orders";
+        return;
+      }
+      const custTitle = lang === "vi" ? "Khách hàng" : lang === "zh" ? "客户" : "Customers";
+      const ordTitle = lang === "vi" ? "Đơn hàng" : lang === "zh" ? "订单" : "Orders";
+      const qtyLabel = lang === "vi" ? "Số lượng" : lang === "zh" ? "数量" : "Qty";
+      const codeLabel = lang === "vi" ? "Mã hàng" : lang === "zh" ? "货号" : "Item";
+      const custs = (m.customers && m.customers.length) ? m.customers.map(c => esc(c)).join(", ") : "—";
+      const ords = (m.orders && m.orders.length) ? m.orders.map(o => esc(o)).join(", ") : "—";
+      box.style.color = "var(--text)";
+      box.innerHTML =
+        `<div style="margin-bottom:0.35rem;"><strong>${codeLabel}:</strong> ${esc(m.code)} &nbsp;·&nbsp; <strong>${qtyLabel}:</strong> ${Number(m.qty).toLocaleString()}</div>` +
+        `<div style="margin-bottom:0.25rem;"><strong>${custTitle} (${m.customer_count || 0}):</strong> ${custs}</div>` +
+        `<div><strong>${ordTitle} (${m.order_count || 0}):</strong> ${ords}</div>`;
+    }
+
+    function renderItemChart(rows) {
+      const ctx = document.getElementById("chartItem");
+      destroyChart(chartItem);
+      if (!rows.length) {
+        chartItem = null;
+        showItemChartInfo(null);
+        return;
+      }
+      const itemMeta = rows;
+      showItemChartInfo(null);
+
+      chartItem = new Chart(ctx, {
+        type: "doughnut",
+        data: {
+          labels: rows.map(r => r.code),
+          datasets: [{
+            data: rows.map(r => r.qty),
+            backgroundColor: CHART_COLORS,
+            borderWidth: 2,
+            borderColor: "#fff",
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          onHover: (evt, elements) => {
+            const canvas = evt.native?.target || evt.chart?.canvas;
+            if (canvas) canvas.style.cursor = elements.length ? "pointer" : "default";
+            if (elements.length) {
+              showItemChartInfo(itemMeta[elements[0].index]);
+            }
+          },
+          onClick: (evt, elements) => {
+            if (elements.length) {
+              showItemChartInfo(itemMeta[elements[0].index]);
+            }
+          },
+          plugins: {
+            legend: {
+              position: "right",
+              labels: { boxWidth: 12, font: { size: 11 } },
+              onHover: (e, legendItem) => {
+                if (legendItem && legendItem.index != null && itemMeta[legendItem.index]) {
+                  showItemChartInfo(itemMeta[legendItem.index]);
+                }
+              }
+            },
+            tooltip: {
+              displayColors: true,
+              callbacks: {
+                title: (items) => {
+                  const m = itemMeta[items[0]?.dataIndex];
+                  if (!m) return "";
+                  return (lang === "vi" ? "Mã hàng: " : lang === "zh" ? "货号: " : "Item: ") + m.code;
+                },
+                label: (item) => {
+                  const m = itemMeta[item.dataIndex];
+                  if (!m) return "";
+                  const qtyLabel = lang === "vi" ? "Số lượng" : lang === "zh" ? "数量" : "Qty";
+                  const linesLabel = lang === "vi" ? "Số dòng" : lang === "zh" ? "明细行" : "Lines";
+                  return `${qtyLabel}: ${Number(m.qty).toLocaleString()}  |  ${linesLabel}: ${m.line_count}`;
+                },
+                footer: (items) => {
+                  const m = itemMeta[items[0]?.dataIndex];
+                  if (!m) return "";
+                  const custTitle = lang === "vi" ? "Khách hàng" : lang === "zh" ? "客户" : "Customers";
+                  const ordTitle = lang === "vi" ? "Đơn hàng" : lang === "zh" ? "订单" : "Orders";
+                  const custs = (m.customers && m.customers.length) ? m.customers.join(", ") : "—";
+                  const ords = (m.orders && m.orders.length) ? m.orders.join(", ") : "—";
+                  return [
+                    `${custTitle} (${m.customer_count || 0}): ${custs}`,
+                    `${ordTitle} (${m.order_count || 0}): ${ords}`,
+                  ];
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function renderOrderTable(rows) {
+      const body = document.getElementById("orderStatsBody");
+      if (!rows.length) {
+        body.innerHTML = `<tr><td colspan="4" style="color:var(--muted)">${t("no_chart_data")}</td></tr>`;
+        return;
+      }
+      body.innerHTML = rows.map(r =>
+        `<tr>
+          <td><strong>${esc(r.order_number || "—")}</strong></td>
+          <td>${esc(r.customer_name || "—")}</td>
+          <td>${r.line_count}</td>
+          <td>${Number(r.qty).toLocaleString()}</td>
+        </tr>`
+      ).join("");
+    }
+
+    function renderRecent(rows) {
+      const body = document.getElementById("recentBody");
+      if (!rows.length) {
+        body.innerHTML = `<tr><td colspan="5" style="color:var(--muted)">${t("no_chart_data")}</td></tr>`;
+        return;
+      }
+      body.innerHTML = rows.map(r => {
+        const img = r.product_image
+          ? `<img class="thumb" style="width:36px;height:36px;" src="${r.product_image}" onclick="openLightbox(this.src)" />`
+          : `<div class="thumb-placeholder" style="width:36px;height:36px;font-size:0.9rem;">📷</div>`;
+        return `<tr>
+          <td>${img}</td>
+          <td>${esc(r.order_number || "—")}</td>
+          <td>${esc(r.item_code || "—")}</td>
+          <td>${esc(r.customer_name || "—")}</td>
+          <td>${r.order_qty != null ? Number(r.order_qty).toLocaleString() : "—"}</td>
+        </tr>`;
+      }).join("");
+    }
+
+    document.getElementById("dashRefreshBtn").addEventListener("click", () => loadDashboard());
+
+    // ---- Notifications (poll) ----
+    function getSeenMaxId() {
+      return parseInt(localStorage.getItem("order_seen_max_id") || "0", 10) || 0;
+    }
+    function setSeenMaxId(id) {
+      localStorage.setItem("order_seen_max_id", String(id));
+    }
+
+    async function pollNotifications(silent) {
+      const since = getSeenMaxId();
+      try {
+        const res = await fetch(`/api/notifications?since_id=${since}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const badge = document.getElementById("notifBadge");
+        const list = document.getElementById("notifList");
+
+        if (data.has_new && data.new_count > 0) {
+          badge.textContent = data.new_count > 99 ? "99+" : String(data.new_count);
+          badge.classList.add("show");
+          list.innerHTML = data.items.map(x =>
+            `<div class="notif-item">
+              <strong>${esc(x.order_number || "")}</strong> · ${esc(x.item_code || "")}<br/>
+              <span style="color:var(--muted)">${esc(x.customer_name || "")} · qty ${x.order_qty ?? "—"}</span>
+            </div>`
+          ).join("");
+          if (!silent) {
+            showToast(t("notify_new", data.new_count), "success");
+          }
+        } else {
+          badge.classList.remove("show");
+          if (!data.items || !data.items.length) {
+            list.innerHTML = `<div class="notif-empty">${lang === "vi" ? "Không có thông báo mới" : lang === "zh" ? "暂无新通知" : "No new notifications"}</div>`;
+          }
+        }
+        // Store server max for mark-as-read
+        window._serverMaxId = data.max_id || 0;
+      } catch (e) {
+        console.warn("notif", e);
+      }
+    }
+
+    document.getElementById("notifBtn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      document.getElementById("notifPanel").classList.toggle("open");
+    });
+    document.getElementById("markReadBtn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (window._serverMaxId) setSeenMaxId(window._serverMaxId);
+      document.getElementById("notifBadge").classList.remove("show");
+      document.getElementById("notifList").innerHTML =
+        `<div class="notif-empty">${lang === "vi" ? "Đã đánh dấu đã xem" : "Marked as read"}</div>`;
+    });
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest(".notif-wrap")) {
+        document.getElementById("notifPanel").classList.remove("open");
+      }
+    });
+
+    // Poll every 20s
+    setInterval(() => pollNotifications(true), 20000);
+
+    // ---- Auth UI events ----
+    document.getElementById("loginBtn").addEventListener("click", () => {
+      document.getElementById("loginModalTitle").textContent = t("login");
+      document.getElementById("lblUser").textContent = t("username");
+      document.getElementById("lblPass").textContent = t("password");
+      document.getElementById("loginSubmit").textContent = t("login");
+      document.getElementById("loginModal").classList.add("open");
+      document.getElementById("loginUser").focus();
+    });
+    document.getElementById("loginModalClose").addEventListener("click", () => {
+      document.getElementById("loginModal").classList.remove("open");
+    });
+    document.getElementById("loginModal").addEventListener("click", (e) => {
+      if (e.target.id === "loginModal") document.getElementById("loginModal").classList.remove("open");
+    });
+    document.getElementById("loginSubmit").addEventListener("click", doLogin);
+    document.getElementById("loginPass").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") doLogin();
+    });
+    async function doLogin() {
+      const username = document.getElementById("loginUser").value.trim();
+      const password = document.getElementById("loginPass").value;
+      try {
+        const res = await fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || t("login_fail"));
+        authToken = data.token;
+        authUser = data.username;
+        localStorage.setItem("order_token", authToken);
+        localStorage.setItem("order_user", authUser);
+        document.getElementById("loginModal").classList.remove("open");
+        document.getElementById("loginPass").value = "";
+        applyAuthUI();
+        showToast(t("login_ok"));
+      } catch (err) {
+        showToast(err.message || t("login_fail"), "error");
+      }
+    }
+    document.getElementById("logoutBtn").addEventListener("click", () => {
+      authToken = "";
+      authUser = "";
+      localStorage.removeItem("order_token");
+      localStorage.removeItem("order_user");
+      applyAuthUI();
+      document.getElementById("modal").classList.remove("open");
+      showToast(t("logout"));
+    });
+
+    // Change password
+    function openChangePassModal() {
+      document.getElementById("changePassTitle").textContent = t("change_password");
+      document.getElementById("lblOldPass").textContent = t("old_password");
+      document.getElementById("lblNewPass").textContent = t("new_password");
+      document.getElementById("lblConfirmPass").textContent = t("confirm_password");
+      document.getElementById("changePassSubmit").textContent = t("save");
+      document.getElementById("oldPass").value = "";
+      document.getElementById("newPass").value = "";
+      document.getElementById("confirmPass").value = "";
+      document.getElementById("changePassModal").classList.add("open");
+    }
+    document.getElementById("changePassBtn").addEventListener("click", openChangePassModal);
+    document.getElementById("changePassClose").addEventListener("click", () => {
+      document.getElementById("changePassModal").classList.remove("open");
+    });
+    document.getElementById("changePassModal").addEventListener("click", (e) => {
+      if (e.target.id === "changePassModal") document.getElementById("changePassModal").classList.remove("open");
+    });
+    document.getElementById("changePassSubmit").addEventListener("click", async () => {
+      if (!isLoggedIn()) { showToast(t("need_login"), "error"); return; }
+      const old_password = document.getElementById("oldPass").value;
+      const new_password = document.getElementById("newPass").value;
+      const confirm = document.getElementById("confirmPass").value;
+      if (new_password !== confirm) {
+        showToast(t("password_mismatch"), "error");
+        return;
+      }
+      if (new_password.length < 4) {
+        showToast(lang === "vi" ? "Mật khẩu tối thiểu 4 ký tự" : "Min 4 characters", "error");
+        return;
+      }
+      const res = await authFetch("/api/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ old_password, new_password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(data.detail || "Failed", "error");
+        return;
+      }
+      document.getElementById("changePassModal").classList.remove("open");
+      showToast(t("password_changed"));
+    });
+    document.getElementById("editBtn").addEventListener("click", startEdit);
+    document.getElementById("saveEditBtn").addEventListener("click", saveEdit);
+    document.getElementById("cancelEditBtn").addEventListener("click", () => {
+      if (currentDetailId != null) showDetail(currentDetailId);
+    });
+    document.getElementById("deleteItemBtn").addEventListener("click", deleteCurrentItem);
+
+    // Patch applyLang labels for auth buttons
+    const _applyLang = applyLang;
+    // extend applyLang via direct calls below in init
+
+    // Init
+    applyLang();
+    applyAuthUI();
+    document.getElementById("loginBtn").textContent = t("login");
+    document.getElementById("logoutBtn").textContent = t("logout");
+    document.getElementById("changePassBtn").textContent = t("change_password");
+    document.getElementById("editBtn").textContent = t("edit");
+    document.getElementById("deleteItemBtn").textContent = t("delete");
+    document.getElementById("saveEditBtn").textContent = t("save");
+    loadOrders();
+    loadDashboard();
+    // First visit: set seen to current max so existing data doesn't all alert
+    (async () => {
+      try {
+        const s = await fetch("/api/stats").then(r => r.json());
+        if (!localStorage.getItem("order_seen_max_id") && s.max_id) {
+          setSeenMaxId(s.max_id);
+        }
+        await pollNotifications(true);
+      } catch (_) {}
+    })();
+  </script>
+</body>
+</html>

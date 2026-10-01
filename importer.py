@@ -3,6 +3,10 @@ from datetime import datetime, date, timedelta
 from typing import List, Dict, Any, Optional, Tuple
 import os
 import uuid
+import zipfile
+import base64
+import re
+from xml.etree import ElementTree as ET
 import openpyxl
 from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, TwoCellAnchor
 from models import OrderItem
@@ -60,106 +64,148 @@ def _to_float(val) -> Optional[float]:
         return None
 
 
-def _extract_images(ws, upload_dir: str = None) -> Dict[int, str]:
-    """
-    Extract embedded images from worksheet.
-    Returns dict: excel_row_1based -> data:image/...;base64,... (or static path fallback)
 
-    Primary storage is base64 data-URI so images persist in Postgres/Supabase
-    without depending on server disk.
-    """
-    import base64
-    import io
+def _mime_for_name(name: str) -> str:
+    n = name.lower()
+    if n.endswith('.png'):
+        return 'image/png'
+    if n.endswith('.gif'):
+        return 'image/gif'
+    if n.endswith('.bmp'):
+        return 'image/bmp'
+    if n.endswith('.webp'):
+        return 'image/webp'
+    return 'image/jpeg'
 
-    if upload_dir:
-        os.makedirs(upload_dir, exist_ok=True)
+
+def _extract_images_from_zip(file_path: str) -> Dict[int, str]:
+    """
+    Reliable image extraction: read xlsx as ZIP.
+    Parse drawing XML for row anchors + media files → data-URI map {excel_row: data_uri}.
+    """
     row_to_url: Dict[int, str] = {}
+    try:
+        with zipfile.ZipFile(file_path, 'r') as z:
+            names = z.namelist()
+            media = sorted([n for n in names if n.startswith('xl/media/') and not n.endswith('/')])
+            if not media:
+                print('[importer] zip: no xl/media/* found')
+                return {}
 
-    images = list(getattr(ws, "_images", []) or [])
-    print(f"[importer] ws._images count={len(images)}")
+            # Load all media as data-URIs keyed by filename
+            media_uri: Dict[str, str] = {}
+            for mpath in media:
+                raw = z.read(mpath)
+                fname = mpath.split('/')[-1]
+                mime = _mime_for_name(fname)
+                uri = f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+                media_uri[fname] = uri
+                # also key by path variants
+                media_uri[mpath] = uri
+                media_uri['../media/' + fname] = uri
+                media_uri['media/' + fname] = uri
+                print(f'[importer] zip media {fname} bytes={len(raw)}')
 
-    orphan_uris = []  # images without valid row anchor
+            # Parse relationships: rId -> media path
+            rid_to_file: Dict[str, str] = {}
+            for rel_name in [n for n in names if n.startswith('xl/drawings/_rels/') and n.endswith('.rels')]:
+                try:
+                    root = ET.fromstring(z.read(rel_name))
+                    for rel in root:
+                        rid = rel.attrib.get('Id') or rel.attrib.get('id')
+                        target = rel.attrib.get('Target') or rel.attrib.get('target')
+                        if rid and target:
+                            # Target like ../media/image1.jpeg
+                            rid_to_file[rid] = target
+                except Exception as e:
+                    print(f'[importer] rels parse {rel_name}: {e}')
 
+            # Parse drawing XML: twoCellAnchor / oneCellAnchor → row + r:embed
+            NS = {
+                'xdr': 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing',
+                'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
+                'r': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
+            }
+            for draw_name in [n for n in names if n.startswith('xl/drawings/drawing') and n.endswith('.xml')]:
+                try:
+                    root = ET.fromstring(z.read(draw_name))
+                    anchors = list(root.findall('xdr:twoCellAnchor', NS)) + list(root.findall('xdr:oneCellAnchor', NS))
+                    for anc in anchors:
+                        from_el = anc.find('xdr:from', NS)
+                        if from_el is None:
+                            continue
+                        row_el = from_el.find('xdr:row', NS)
+                        if row_el is None or row_el.text is None:
+                            continue
+                        row_0 = int(row_el.text)
+                        excel_row = row_0 + 1  # 0-based in XML → 1-based Excel
+
+                        blip = anc.find('.//a:blip', NS)
+                        if blip is None:
+                            continue
+                        rid = blip.attrib.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed')
+                        if not rid:
+                            rid = blip.attrib.get('embed')
+                        if not rid:
+                            continue
+                        target = rid_to_file.get(rid)
+                        if not target:
+                            continue
+                        # resolve uri
+                        uri = media_uri.get(target)
+                        if not uri:
+                            fname = target.split('/')[-1]
+                            uri = media_uri.get(fname)
+                        if uri:
+                            row_to_url[excel_row] = uri
+                            print(f'[importer] zip map rId={rid} -> excel row {excel_row}')
+                except Exception as e:
+                    print(f'[importer] drawing parse {draw_name}: {e}')
+
+            # Fallback: sequential assign if no row mapping
+            if not row_to_url and media:
+                for i, mpath in enumerate(media):
+                    fname = mpath.split('/')[-1]
+                    uri = media_uri.get(fname)
+                    if uri:
+                        row_to_url[2 + i] = uri  # data starts at row 2
+                        print(f'[importer] zip sequential row {2+i} <- {fname}')
+    except Exception as e:
+        print(f'[importer] zip extract failed: {e}')
+    return row_to_url
+
+
+def _extract_images(ws, upload_dir: str = None) -> Dict[int, str]:
+    """Fallback: openpyxl ws._images (may be empty on some builds)."""
+    row_to_url: Dict[int, str] = {}
+    images = list(getattr(ws, '_images', []) or [])
+    print(f'[importer] openpyxl ws._images count={len(images)}')
     for idx, img in enumerate(images):
         try:
-            # --- resolve Excel row (1-based) ---
             row_0 = None
-            anchor = getattr(img, "anchor", None)
-            if anchor is not None:
-                if hasattr(anchor, "_from") and anchor._from is not None:
-                    row_0 = getattr(anchor._from, "row", None)
-                elif hasattr(anchor, "from_"):  # rare
-                    row_0 = getattr(anchor.from_, "row", None)
-
-            # --- binary data ---
+            anchor = getattr(img, 'anchor', None)
+            if anchor is not None and hasattr(anchor, '_from') and anchor._from is not None:
+                row_0 = getattr(anchor._from, 'row', None)
             data = None
-            if hasattr(img, "_data") and callable(img._data):
-                try:
-                    data = img._data()
-                except Exception as e:
-                    print(f"[importer] img._data() failed idx={idx}: {e}")
-            if not data and hasattr(img, "ref"):
-                try:
-                    # Some openpyxl versions expose path into archive
-                    data = None
-                except Exception:
-                    pass
-            if not data and hasattr(img, "path"):
-                try:
-                    # Image on disk (unlikely for embedded)
-                    with open(img.path, "rb") as f:
-                        data = f.read()
-                except Exception:
-                    pass
-
+            if hasattr(img, '_data') and callable(img._data):
+                data = img._data()
             if not data:
-                print(f"[importer] no data for image idx={idx}")
                 continue
-
-            fmt = (getattr(img, "format", None) or "jpeg").lower().replace(".", "")
-            mime_map = {
-                "jpeg": "image/jpeg", "jpg": "image/jpeg",
-                "png": "image/png", "gif": "image/gif", "bmp": "image/bmp",
-            }
-            ext_map = {
-                "jpeg": ".jpg", "jpg": ".jpg",
-                "png": ".png", "gif": ".gif", "bmp": ".bmp",
-            }
-            mime = mime_map.get(fmt, "image/jpeg")
-            ext = ext_map.get(fmt, ".jpg")
-
-            b64 = base64.b64encode(bytes(data)).decode("ascii")
-            data_uri = f"data:{mime};base64,{b64}"
-
+            fmt = (getattr(img, 'format', None) or 'jpeg').lower().replace('.', '')
+            mime = 'image/png' if fmt == 'png' else 'image/jpeg'
+            uri = f"data:{mime};base64,{base64.b64encode(bytes(data)).decode('ascii')}"
+            if row_0 is not None:
+                row_to_url[int(row_0) + 1] = uri
             if upload_dir:
                 try:
-                    filename = f"{uuid.uuid4().hex}{ext}"
-                    with open(os.path.join(upload_dir, filename), "wb") as f:
+                    os.makedirs(upload_dir, exist_ok=True)
+                    ext = '.png' if fmt == 'png' else '.jpg'
+                    with open(os.path.join(upload_dir, f'{uuid.uuid4().hex}{ext}'), 'wb') as f:
                         f.write(data)
-                except Exception as fe:
-                    print(f"[importer] file save skip {idx}: {fe}")
-
-            if row_0 is not None:
-                excel_row = int(row_0) + 1
-                row_to_url[excel_row] = data_uri
-                print(f"[importer] image idx={idx} -> row {excel_row}, bytes={len(data)}")
-            else:
-                orphan_uris.append(data_uri)
-                print(f"[importer] image idx={idx} no anchor, bytes={len(data)}")
+                except Exception:
+                    pass
         except Exception as e:
-            print(f"[importer] skip image {idx}: {e}")
-            continue
-
-    # Assign orphan images to first data rows that lack images (row 2, 3, 4...)
-    if orphan_uris:
-        next_row = 2
-        for uri in orphan_uris:
-            while next_row in row_to_url:
-                next_row += 1
-            row_to_url[next_row] = uri
-            print(f"[importer] orphan image assigned to row {next_row}")
-            next_row += 1
-
+            print(f'[importer] openpyxl image skip {idx}: {e}')
     return row_to_url
 
 
@@ -178,18 +224,13 @@ def parse_excel(
     wb = openpyxl.load_workbook(file_path, data_only=False)
     ws = wb.active
 
-    # ALWAYS extract embedded images → base64 data-URI (works on Koyeb/Supabase)
-    upload_dir = os.path.join(static_dir, UPLOAD_SUBDIR) if static_dir else None
-    row_images: Dict[int, str] = _extract_images(ws, upload_dir)
+    # PRIMARY: zip-based extraction (reliable on all platforms / Koyeb)
+    row_images: Dict[int, str] = _extract_images_from_zip(file_path)
+    # Fallback: openpyxl drawings
     if not row_images:
-        # Second pass: some files only expose images after full load
-        try:
-            wb3 = openpyxl.load_workbook(file_path, data_only=False, keep_vba=False)
-            row_images = _extract_images(wb3.active, upload_dir)
-            wb3.close()
-        except Exception as e:
-            print(f"[importer] image reload failed: {e}")
-    print(f"[importer] extracted images for rows: {list(row_images.keys())}")
+        upload_dir = os.path.join(static_dir, UPLOAD_SUBDIR) if static_dir else None
+        row_images = _extract_images(ws, upload_dir)
+    print(f"[importer] FINAL image rows: {list(row_images.keys())} count={len(row_images)}")
 
     # Header row
     headers = []
@@ -256,6 +297,26 @@ def parse_excel(
         if data.get("order_number") or data.get("item_code"):
             rows.append(data)
 
+    # If some rows still lack images, assign remaining images in order
+    used_rows = set()
+    for r in rows:
+        if r.get("product_image"):
+            # mark which image was used is hard; just fill empties sequentially
+            pass
+    unused = [uri for row_i, uri in sorted(row_images.items())]
+    # Rebuild unused as values not already assigned
+    assigned = {r.get("product_image") for r in rows if r.get("product_image")}
+    leftover = [uri for _, uri in sorted(row_images.items()) if uri not in assigned]
+    if leftover:
+        li = 0
+        for r in rows:
+            if not r.get("product_image") and li < len(leftover):
+                r["product_image"] = leftover[li]
+                li += 1
+                print(f"[importer] backfill image onto item {r.get('item_code')}")
+
+    with_img = sum(1 for r in rows if r.get("product_image"))
+    print(f"[importer] rows={len(rows)} with_images={with_img}")
     return rows
 
 
