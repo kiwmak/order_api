@@ -50,7 +50,7 @@ class OrderItem(Base):
     order_date = Column(Date, nullable=True)
     delivery_date = Column(Date, nullable=True)
     customer_order_number = Column(String(100))
-    product_image = Column(String(500), nullable=True)
+    product_image = Column(Text, nullable=True)  # path or data:image/...;base64,...
     item_code = Column(String(100), index=True)
     customer_item_code = Column(String(100))
     sub_item_code = Column(String(100))
