@@ -60,66 +60,108 @@ def _to_float(val) -> Optional[float]:
         return None
 
 
-def _extract_images(ws, upload_dir: str) -> Dict[int, str]:
+def _extract_images(ws, upload_dir: str = None) -> Dict[int, str]:
     """
     Extract embedded images from worksheet.
-    Returns dict: excel_row_1based -> relative URL path e.g. /static/uploads/xxx.jpg
-    Images are matched by their anchor row (0-based in openpyxl -> +1 for Excel row).
+    Returns dict: excel_row_1based -> data:image/...;base64,... (or static path fallback)
+
+    Primary storage is base64 data-URI so images persist in Postgres/Supabase
+    without depending on server disk.
     """
-    os.makedirs(upload_dir, exist_ok=True)
+    import base64
+    import io
+
+    if upload_dir:
+        os.makedirs(upload_dir, exist_ok=True)
     row_to_url: Dict[int, str] = {}
 
     images = list(getattr(ws, "_images", []) or [])
+    print(f"[importer] ws._images count={len(images)}")
+
+    orphan_uris = []  # images without valid row anchor
+
     for idx, img in enumerate(images):
         try:
-            anchor = img.anchor
+            # --- resolve Excel row (1-based) ---
             row_0 = None
-            if hasattr(anchor, "_from"):
-                row_0 = anchor._from.row
-            elif isinstance(anchor, (OneCellAnchor, TwoCellAnchor)):
-                row_0 = anchor._from.row
+            anchor = getattr(img, "anchor", None)
+            if anchor is not None:
+                if hasattr(anchor, "_from") and anchor._from is not None:
+                    row_0 = getattr(anchor._from, "row", None)
+                elif hasattr(anchor, "from_"):  # rare
+                    row_0 = getattr(anchor.from_, "row", None)
 
-            if row_0 is None:
-                continue
-
-            excel_row = row_0 + 1  # 1-based Excel row
-
-            # Get binary data
+            # --- binary data ---
             data = None
             if hasattr(img, "_data") and callable(img._data):
-                data = img._data()
-            elif hasattr(img, "ref") and img.ref:
-                pass
+                try:
+                    data = img._data()
+                except Exception as e:
+                    print(f"[importer] img._data() failed idx={idx}: {e}")
+            if not data and hasattr(img, "ref"):
+                try:
+                    # Some openpyxl versions expose path into archive
+                    data = None
+                except Exception:
+                    pass
+            if not data and hasattr(img, "path"):
+                try:
+                    # Image on disk (unlikely for embedded)
+                    with open(img.path, "rb") as f:
+                        data = f.read()
+                except Exception:
+                    pass
 
             if not data:
+                print(f"[importer] no data for image idx={idx}")
                 continue
 
-            # Extension from format or path
-            fmt = (getattr(img, "format", None) or "jpeg").lower()
-            ext_map = {
-                "jpeg": ".jpg",
-                "jpg": ".jpg",
-                "png": ".png",
-                "gif": ".gif",
-                "bmp": ".bmp",
-                "emf": ".emf",
-                "wmf": ".wmf",
+            fmt = (getattr(img, "format", None) or "jpeg").lower().replace(".", "")
+            mime_map = {
+                "jpeg": "image/jpeg", "jpg": "image/jpeg",
+                "png": "image/png", "gif": "image/gif", "bmp": "image/bmp",
             }
+            ext_map = {
+                "jpeg": ".jpg", "jpg": ".jpg",
+                "png": ".png", "gif": ".gif", "bmp": ".bmp",
+            }
+            mime = mime_map.get(fmt, "image/jpeg")
             ext = ext_map.get(fmt, ".jpg")
 
-            filename = f"{uuid.uuid4().hex}{ext}"
-            filepath = os.path.join(upload_dir, filename)
-            with open(filepath, "wb") as f:
-                f.write(data)
+            b64 = base64.b64encode(bytes(data)).decode("ascii")
+            data_uri = f"data:{mime};base64,{b64}"
 
-            # URL served by FastAPI StaticFiles
-            url = f"/static/{UPLOAD_SUBDIR}/{filename}"
-            row_to_url[excel_row] = url
+            if upload_dir:
+                try:
+                    filename = f"{uuid.uuid4().hex}{ext}"
+                    with open(os.path.join(upload_dir, filename), "wb") as f:
+                        f.write(data)
+                except Exception as fe:
+                    print(f"[importer] file save skip {idx}: {fe}")
+
+            if row_0 is not None:
+                excel_row = int(row_0) + 1
+                row_to_url[excel_row] = data_uri
+                print(f"[importer] image idx={idx} -> row {excel_row}, bytes={len(data)}")
+            else:
+                orphan_uris.append(data_uri)
+                print(f"[importer] image idx={idx} no anchor, bytes={len(data)}")
         except Exception as e:
             print(f"[importer] skip image {idx}: {e}")
             continue
 
+    # Assign orphan images to first data rows that lack images (row 2, 3, 4...)
+    if orphan_uris:
+        next_row = 2
+        for uri in orphan_uris:
+            while next_row in row_to_url:
+                next_row += 1
+            row_to_url[next_row] = uri
+            print(f"[importer] orphan image assigned to row {next_row}")
+            next_row += 1
+
     return row_to_url
+
 
 
 def parse_excel(
@@ -132,21 +174,22 @@ def parse_excel(
     If static_dir is provided, embedded images are extracted to static_dir/uploads
     and product_image is set to the public URL.
     """
-    wb = openpyxl.load_workbook(file_path, data_only=True)
+    # data_only=False keeps drawings/images; cell values still readable
+    wb = openpyxl.load_workbook(file_path, data_only=False)
     ws = wb.active
 
-    # Extract images first (need non-data_only for drawings? openpyxl keeps them)
-    # Re-open without data_only if images missing - actually images are in drawing part
-    row_images: Dict[int, str] = {}
-    if static_dir:
-        upload_dir = os.path.join(static_dir, UPLOAD_SUBDIR)
-        # Images may not load with data_only in some versions; try current ws first
-        row_images = _extract_images(ws, upload_dir)
-        if not row_images:
-            # Fallback: reopen without data_only to access drawings
-            wb2 = openpyxl.load_workbook(file_path, data_only=False)
-            row_images = _extract_images(wb2.active, upload_dir)
-            wb2.close()
+    # ALWAYS extract embedded images → base64 data-URI (works on Koyeb/Supabase)
+    upload_dir = os.path.join(static_dir, UPLOAD_SUBDIR) if static_dir else None
+    row_images: Dict[int, str] = _extract_images(ws, upload_dir)
+    if not row_images:
+        # Second pass: some files only expose images after full load
+        try:
+            wb3 = openpyxl.load_workbook(file_path, data_only=False, keep_vba=False)
+            row_images = _extract_images(wb3.active, upload_dir)
+            wb3.close()
+        except Exception as e:
+            print(f"[importer] image reload failed: {e}")
+    print(f"[importer] extracted images for rows: {list(row_images.keys())}")
 
     # Header row
     headers = []

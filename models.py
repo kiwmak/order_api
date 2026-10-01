@@ -50,7 +50,7 @@ class OrderItem(Base):
     order_date = Column(Date, nullable=True)
     delivery_date = Column(Date, nullable=True)
     customer_order_number = Column(String(100))
-    product_image = Column(String(500), nullable=True)
+    product_image = Column(Text, nullable=True)  # path or data:image/...;base64,...
     item_code = Column(String(100), index=True)
     customer_item_code = Column(String(100))
     sub_item_code = Column(String(100))
@@ -94,6 +94,19 @@ class OrderItem(Base):
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    # Ensure product_image can hold base64 data-URIs (Supabase may still be VARCHAR(500))
+    try:
+        url = str(engine.url)
+        if "sqlite" not in url:
+            from sqlalchemy import text
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE order_items ALTER COLUMN product_image TYPE TEXT"
+                ))
+            print("[models] product_image migrated to TEXT")
+    except Exception as e:
+        # Column already TEXT or table not ready — ignore
+        print(f"[models] product_image migrate skip: {e}")
 
 
 def get_db():
