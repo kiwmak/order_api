@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+data/*.db
+data/credentials.json
+static/uploads/*
+!static/uploads/.gitkeep
+.env
+.env.local
+*.xlsx
+.DS_Store

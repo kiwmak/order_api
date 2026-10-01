@@ -1,0 +1,14 @@
+__pycache__
+*.pyc
+*.pyo
+.git
+.gitignore
+data/*.db
+data/credentials.json
+static/uploads/*
+!static/uploads/.gitkeep
+.env
+.env.*
+*.md
+.venv
+venv
