@@ -60,19 +60,13 @@ def _to_float(val) -> Optional[float]:
         return None
 
 
-def _extract_images(ws, upload_dir: str = None) -> Dict[int, str]:
+def _extract_images(ws, upload_dir: str) -> Dict[int, str]:
     """
     Extract embedded images from worksheet.
-    Returns dict: excel_row_1based -> image src for <img>.
-
-    Prefer data-URI (base64) so images work on Koyeb/Supabase without relying
-    on ephemeral local disk. Also writes a file under upload_dir when provided
-    (useful for local dev).
+    Returns dict: excel_row_1based -> relative URL path e.g. /static/uploads/xxx.jpg
+    Images are matched by their anchor row (0-based in openpyxl -> +1 for Excel row).
     """
-    import base64
-
-    if upload_dir:
-        os.makedirs(upload_dir, exist_ok=True)
+    os.makedirs(upload_dir, exist_ok=True)
     row_to_url: Dict[int, str] = {}
 
     images = list(getattr(ws, "_images", []) or [])
@@ -90,13 +84,17 @@ def _extract_images(ws, upload_dir: str = None) -> Dict[int, str]:
 
             excel_row = row_0 + 1  # 1-based Excel row
 
+            # Get binary data
             data = None
             if hasattr(img, "_data") and callable(img._data):
                 data = img._data()
+            elif hasattr(img, "ref") and img.ref:
+                pass
 
             if not data:
                 continue
 
+            # Extension from format or path
             fmt = (getattr(img, "format", None) or "jpeg").lower()
             ext_map = {
                 "jpeg": ".jpg",
@@ -104,31 +102,19 @@ def _extract_images(ws, upload_dir: str = None) -> Dict[int, str]:
                 "png": ".png",
                 "gif": ".gif",
                 "bmp": ".bmp",
-            }
-            mime_map = {
-                "jpeg": "image/jpeg",
-                "jpg": "image/jpeg",
-                "png": "image/png",
-                "gif": "image/gif",
-                "bmp": "image/bmp",
+                "emf": ".emf",
+                "wmf": ".wmf",
             }
             ext = ext_map.get(fmt, ".jpg")
-            mime = mime_map.get(fmt, "image/jpeg")
 
-            # Primary: data URI stored in DB (works on any host)
-            b64 = base64.b64encode(data).decode("ascii")
-            data_uri = f"data:{mime};base64,{b64}"
-            row_to_url[excel_row] = data_uri
+            filename = f"{uuid.uuid4().hex}{ext}"
+            filepath = os.path.join(upload_dir, filename)
+            with open(filepath, "wb") as f:
+                f.write(data)
 
-            # Optional local file copy (local debug / static serving)
-            if upload_dir:
-                try:
-                    filename = f"{uuid.uuid4().hex}{ext}"
-                    filepath = os.path.join(upload_dir, filename)
-                    with open(filepath, "wb") as f:
-                        f.write(data)
-                except Exception as fe:
-                    print(f"[importer] file save skip {idx}: {fe}")
+            # URL served by FastAPI StaticFiles
+            url = f"/static/{UPLOAD_SUBDIR}/{filename}"
+            row_to_url[excel_row] = url
         except Exception as e:
             print(f"[importer] skip image {idx}: {e}")
             continue

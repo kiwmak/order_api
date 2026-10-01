@@ -905,7 +905,7 @@
         const cells = TABLE_COLS.map(c => {
           if (c === "product_image") {
             if (o.product_image) {
-              return `<td><img class="thumb" src="${o.product_image}" alt="" loading="lazy" onclick="event.stopPropagation(); openLightbox(this.src)" /></td>`;
+              return `<td><img class="thumb" src="${esc(o.product_image)}" alt="" loading="lazy" onclick="event.stopPropagation(); openLightbox('${esc(o.product_image)}')" /></td>`;
             }
             return `<td><div class="thumb-placeholder">📷</div></td>`;
           }
@@ -963,7 +963,7 @@
         if (f === "product_image") {
           if (o.product_image) {
             return `<div class="detail-item full"><label>${fl(f)}</label>
-              <img class="detail-img" src="${o.product_image}" alt="" onclick="openLightbox(this.src)" />
+              <img class="detail-img" src="${esc(o.product_image)}" alt="" onclick="openLightbox('${esc(o.product_image)}')" />
             </div>`;
           }
           return `<div class="detail-item full"><label>${fl(f)}</label><span>—</span></div>`;
@@ -1283,7 +1283,7 @@
       }
       body.innerHTML = rows.map(r => {
         const img = r.product_image
-          ? `<img class="thumb" style="width:36px;height:36px;" src="${r.product_image}" onclick="openLightbox(this.src)" />`
+          ? `<img class="thumb" style="width:36px;height:36px;" src="${esc(r.product_image)}" onclick="openLightbox('${esc(r.product_image)}')" />`
           : `<div class="thumb-placeholder" style="width:36px;height:36px;font-size:0.9rem;">📷</div>`;
         return `<tr>
           <td>${img}</td>
