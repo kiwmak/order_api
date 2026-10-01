@@ -227,33 +227,35 @@ def api_change_password(
 
 
 
-def _import_one_file(file: UploadFile, db: Session) -> FileImportDetail:
-    """Import a single Excel file. Returns detail; does not commit (caller commits)."""
-    if not file.filename:
+def _import_bytes(content: bytes, filename: str, db: Session) -> FileImportDetail:
+    """Parse one Excel from bytes, add rows to session. Caller commits."""
+    if not filename:
         return FileImportDetail(filename="(empty)", imported_count=0, error="No filename")
 
-    ext = os.path.splitext(file.filename)[1].lower()
+    ext = os.path.splitext(filename)[1].lower()
     if ext not in (".xlsx", ".xls"):
         return FileImportDetail(
-            filename=file.filename,
+            filename=filename,
             imported_count=0,
             error="Only .xlsx / .xls supported",
         )
+    if not content:
+        return FileImportDetail(filename=filename, imported_count=0, error="Empty file")
 
     tmp_path = None
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
-            shutil.copyfileobj(file.file, tmp)
+            tmp.write(content)
             tmp_path = tmp.name
 
         rows = parse_excel(
             tmp_path,
-            source_name=file.filename,
+            source_name=filename,
             static_dir=STATIC_DIR,
         )
         if not rows:
             return FileImportDetail(
-                filename=file.filename,
+                filename=filename,
                 imported_count=0,
                 error="No valid order rows found",
             )
@@ -264,13 +266,13 @@ def _import_one_file(file: UploadFile, db: Session) -> FileImportDetail:
 
         with_img = sum(1 for r in rows if r.get("product_image"))
         return FileImportDetail(
-            filename=file.filename,
+            filename=filename,
             imported_count=len(items),
             image_count=with_img,
         )
     except Exception as e:
         return FileImportDetail(
-            filename=file.filename or "(unknown)",
+            filename=filename or "(unknown)",
             imported_count=0,
             error=str(e),
         )
@@ -289,7 +291,9 @@ async def import_excel(
     db: Session = Depends(get_db),
     user: str = Depends(get_current_user),
 ):
-    if not files:
+    # Normalize: filter empty / browser ghost slots
+    uploads = [f for f in files if f is not None and (f.filename or "").strip()]
+    if not uploads:
         raise HTTPException(400, "No file uploaded")
 
     details: List[FileImportDetail] = []
@@ -297,36 +301,56 @@ async def import_excel(
     total_img = 0
     errors = 0
 
-    for f in files:
-        detail = _import_one_file(f, db)
-        details.append(detail)
-        total += detail.imported_count
-        total_img += detail.image_count
+    # Process & COMMIT each file separately so one failure does not roll back others
+    for f in uploads:
+        fname = f.filename or "unknown.xlsx"
+        try:
+            content = await f.read()
+        except Exception as e:
+            details.append(FileImportDetail(filename=fname, imported_count=0, error=f"Read failed: {e}"))
+            errors += 1
+            continue
+
+        detail = _import_bytes(content, fname, db)
         if detail.error:
+            db.rollback()
+            details.append(detail)
+            errors += 1
+            continue
+
+        try:
+            db.commit()
+            total += detail.imported_count
+            total_img += detail.image_count
+            details.append(detail)
+            # free identity map (large base64 images)
+            db.expunge_all()
+        except Exception as e:
+            db.rollback()
+            details.append(FileImportDetail(
+                filename=fname,
+                imported_count=0,
+                image_count=0,
+                error=f"DB commit failed: {e}",
+            ))
             errors += 1
 
-    if total == 0 and errors == len(files):
-        db.rollback()
+    if total == 0 and errors == len(uploads):
         msgs = "; ".join(f"{d.filename}: {d.error}" for d in details if d.error)
         raise HTTPException(400, f"Import failed for all files. {msgs}")
 
-    try:
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(500, f"Database commit failed: {str(e)}")
-
-    ok_files = len(files) - errors
-    msg = f"Imported {total} order items from {ok_files}/{len(files)} file(s)"
+    ok_files = len(uploads) - errors
+    msg = f"Imported {total} order items from {ok_files}/{len(uploads)} file(s)"
     if total_img:
         msg += f" ({total_img} with images)"
     if errors:
-        msg += f" — {errors} file(s) failed"
+        msg += f" — {errors} file(s) failed: "
+        msg += "; ".join(f"{d.filename}: {d.error}" for d in details if d.error)
 
     return ImportResult(
         success=errors == 0,
         imported_count=total,
-        file_count=len(files),
+        file_count=len(uploads),
         message=msg,
         details=details,
     )
