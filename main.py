@@ -272,6 +272,7 @@ def _upsert_rows(rows: list, db: Session) -> tuple:
     for item in items:
         if item.product_image:
             image_count += 1
+            print(f"[upsert] item_code={item.item_code} product_image={str(item.product_image)[:90]}")
 
         order_no = (item.order_number or "").strip()
         item_code = (item.item_code or "").strip() if item.item_code else ""
@@ -481,6 +482,7 @@ def list_orders(
         row = OrderItemOut.model_validate(x) if hasattr(OrderItemOut, "model_validate") else OrderItemOut.from_orm(x)
         if not include_images:
             pi = row.product_image
+            # only strip heavy base64; keep http(s) Storage URLs for thumbnails
             if pi and str(pi).startswith("data:"):
                 row.product_image = "__has_image__"
         out.append(row)

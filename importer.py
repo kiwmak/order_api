@@ -93,20 +93,36 @@ def _extract_images_from_zip(file_path: str) -> Dict[int, str]:
                 print('[importer] zip: no xl/media/* found')
                 return {}
 
-            # Load media → Supabase Storage URL (preferred) or base64 fallback
+            # Load media BYTES first — upload to Storage only when linked to a data row
             print(f"[importer] supabase storage configured={storage_configured()}")
-            media_uri: Dict[str, str] = {}
+            media_bytes: Dict[str, tuple] = {}  # key -> (raw, mime, fname)
             for mpath in media:
                 raw = z.read(mpath)
                 fname = mpath.split('/')[-1]
                 mime = _mime_for_name(fname)
+                media_bytes[fname] = (raw, mime, fname)
+                media_bytes[mpath] = (raw, mime, fname)
+                media_bytes['../media/' + fname] = (raw, mime, fname)
+                media_bytes['media/' + fname] = (raw, mime, fname)
+                print(f'[importer] zip media loaded {fname} bytes={len(raw)}')
+
+            def _uri_for(target: str):
+                """Resolve target path/name to Storage URL or base64 (upload once per file)."""
+                if not target:
+                    return None
+                info = media_bytes.get(target) or media_bytes.get(target.split('/')[-1])
+                if not info:
+                    return None
+                raw, mime, fname = info
+                # cache on fname so same image not re-uploaded
+                cache_key = f"__uri__{fname}"
+                if cache_key in media_bytes:
+                    return media_bytes[cache_key]  # type: ignore
                 uri = image_ref_from_bytes(raw, mime=mime, filename_hint=fname)
-                media_uri[fname] = uri
-                media_uri[mpath] = uri
-                media_uri['../media/' + fname] = uri
-                media_uri['media/' + fname] = uri
-                kind = "storage" if uri.startswith("http") else "base64"
-                print(f'[importer] zip media {fname} bytes={len(raw)} -> {kind}')
+                media_bytes[cache_key] = uri  # type: ignore
+                kind = "storage" if str(uri).startswith("http") else "base64"
+                print(f'[importer] image ready {fname} -> {kind} len={len(str(uri))}')
+                return uri
 
             # Parse relationships: rId -> media path
             rid_to_file: Dict[str, str] = {}
@@ -153,11 +169,8 @@ def _extract_images_from_zip(file_path: str) -> Dict[int, str]:
                         target = rid_to_file.get(rid)
                         if not target:
                             continue
-                        # resolve uri
-                        uri = media_uri.get(target)
-                        if not uri:
-                            fname = target.split('/')[-1]
-                            uri = media_uri.get(fname)
+                        # resolve + upload only for this row
+                        uri = _uri_for(target)
                         if uri:
                             row_to_url[excel_row] = uri
                             print(f'[importer] zip map rId={rid} -> excel row {excel_row}')
@@ -168,7 +181,7 @@ def _extract_images_from_zip(file_path: str) -> Dict[int, str]:
             if not row_to_url and media:
                 for i, mpath in enumerate(media):
                     fname = mpath.split('/')[-1]
-                    uri = media_uri.get(fname)
+                    uri = _uri_for(fname)
                     if uri:
                         row_to_url[2 + i] = uri  # data starts at row 2
                         print(f'[importer] zip sequential row {2+i} <- {fname}')
@@ -299,14 +312,7 @@ def parse_excel(
         if data.get("order_number") or data.get("item_code"):
             rows.append(data)
 
-    # If some rows still lack images, assign remaining images in order
-    used_rows = set()
-    for r in rows:
-        if r.get("product_image"):
-            # mark which image was used is hard; just fill empties sequentially
-            pass
-    unused = [uri for row_i, uri in sorted(row_images.items())]
-    # Rebuild unused as values not already assigned
+    # Backfill: rows without image get remaining extracted images (in order)
     assigned = {r.get("product_image") for r in rows if r.get("product_image")}
     leftover = [uri for _, uri in sorted(row_images.items()) if uri not in assigned]
     if leftover:
@@ -318,7 +324,12 @@ def parse_excel(
                 print(f"[importer] backfill image onto item {r.get('item_code')}")
 
     with_img = sum(1 for r in rows if r.get("product_image"))
-    print(f"[importer] rows={len(rows)} with_images={with_img}")
+    storage_n = sum(1 for r in rows if str(r.get("product_image") or "").startswith("http"))
+    print(f"[importer] rows={len(rows)} with_images={with_img} storage_urls={storage_n}")
+    for r in rows:
+        pi = r.get("product_image") or ""
+        if pi:
+            print(f"[importer]   item={r.get('item_code')} image={pi[:80]}...")
     return rows
 
 
