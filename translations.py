@@ -333,6 +333,31 @@ UI_TEXT = {
         "en": "Clear All Data",
         "vi": "Xóa tất cả dữ liệu"
     },
+    "backup": {
+        "zh": "备份",
+        "en": "Backup",
+        "vi": "Sao lưu"
+    },
+    "restore": {
+        "zh": "恢复",
+        "en": "Restore",
+        "vi": "Khôi phục"
+    },
+    "backup_ok": {
+        "zh": "备份已下载",
+        "en": "Backup downloaded",
+        "vi": "Đã tải file sao lưu"
+    },
+    "restore_confirm_replace": {
+        "zh": "恢复将清空当前数据并导入备份。继续？",
+        "en": "Restore will REPLACE all current data with the backup. Continue?",
+        "vi": "Khôi phục sẽ XÓA dữ liệu hiện tại và nạp từ file backup. Tiếp tục?"
+    },
+    "restore_confirm_merge": {
+        "zh": "恢复将合并备份（已有订单则更新）。继续？",
+        "en": "Restore will MERGE backup (update existing orders). Continue?",
+        "vi": "Khôi phục sẽ GỘP backup (đơn đã có thì cập nhật). Tiếp tục?"
+    },
     "lang": {
         "zh": "语言",
         "en": "Language",

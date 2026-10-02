@@ -6,6 +6,8 @@ Order Management Web API + UI
 - REST API for programmatic access
 """
 import os
+import json
+import io
 import shutil
 import tempfile
 from typing import List, Optional, Any
@@ -13,7 +15,7 @@ from datetime import date, datetime
 from collections import defaultdict
 
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -519,6 +521,236 @@ def update_item(
     db.commit()
     db.refresh(item)
     return item
+
+
+
+# ---------- Backup / Restore ----------
+@app.get("/api/backup")
+def backup_database(
+    db: Session = Depends(get_db),
+    user: str = Depends(get_current_user),
+):
+    """Download full database backup as JSON (includes product images)."""
+    items = db.query(OrderItem).order_by(OrderItem.id).all()
+    rows = []
+    for x in items:
+        rows.append({
+            "customer_name": x.customer_name,
+            "order_number": x.order_number,
+            "order_date": x.order_date.isoformat() if x.order_date else None,
+            "delivery_date": x.delivery_date.isoformat() if x.delivery_date else None,
+            "customer_order_number": x.customer_order_number,
+            "product_image": x.product_image,
+            "item_code": x.item_code,
+            "customer_item_code": x.customer_item_code,
+            "sub_item_code": x.sub_item_code,
+            "main_category": x.main_category,
+            "sub_category": x.sub_category,
+            "description": x.description,
+            "container_size": x.container_size,
+            "container_process": x.container_process,
+            "container_color": x.container_color,
+            "order_qty": x.order_qty,
+            "retail_pack_rate": x.retail_pack_rate,
+            "unit_qty": x.unit_qty,
+            "unit_wax_weight_g": x.unit_wax_weight_g,
+            "fragrance_net_content_ml": x.fragrance_net_content_ml,
+            "total_wax_weight_kg": x.total_wax_weight_kg,
+            "wax_material": x.wax_material,
+            "solid_or_bubble_wax": x.solid_or_bubble_wax,
+            "wick_count": x.wick_count,
+            "wax_color": x.wax_color,
+            "lid_process": x.lid_process,
+            "fragrance_name": x.fragrance_name,
+            "fragrance_code": x.fragrance_code,
+            "fragrance_company": x.fragrance_company,
+            "fragrance_ratio": x.fragrance_ratio,
+            "quality_requirement": x.quality_requirement,
+            "inspection_type": x.inspection_type,
+            "inspection_requirement": x.inspection_requirement,
+            "test_requirement": x.test_requirement,
+            "sample_requirement": x.sample_requirement,
+            "salesperson": x.salesperson,
+            "remarks": x.remarks,
+            "packaging_detail": x.packaging_detail,
+            "merchandiser": x.merchandiser,
+            "outer_box_barcode": x.outer_box_barcode,
+            "outer_box_pack_rate": x.outer_box_pack_rate,
+            "inner_box_barcode": x.inner_box_barcode,
+            "retail_barcode": x.retail_barcode,
+            "imported_at": x.imported_at.isoformat() if x.imported_at else None,
+            "source_file": x.source_file,
+        })
+    payload = {
+        "format": "order_api_backup",
+        "version": 1,
+        "exported_at": datetime.utcnow().isoformat() + "Z",
+        "exported_by": user,
+        "count": len(rows),
+        "items": rows,
+    }
+    body = json.dumps(payload, ensure_ascii=False, indent=2)
+    filename = f"order_backup_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+    return Response(
+        content=body.encode("utf-8"),
+        media_type="application/json; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        },
+    )
+
+
+@app.post("/api/restore")
+async def restore_database(
+    file: UploadFile = File(..., description="Backup JSON file"),
+    mode: str = Query("replace", description="replace = clear then import; merge = upsert by order_number+item_code"),
+    db: Session = Depends(get_db),
+    user: str = Depends(get_current_user),
+):
+    """Restore database from a JSON backup file."""
+    if not file.filename or not file.filename.lower().endswith(".json"):
+        raise HTTPException(400, "Please upload a .json backup file")
+    try:
+        raw = await file.read()
+        data = json.loads(raw.decode("utf-8"))
+    except Exception as e:
+        raise HTTPException(400, f"Invalid JSON: {e}")
+
+    items = data.get("items") if isinstance(data, dict) else data
+    if not isinstance(items, list):
+        raise HTTPException(400, "Backup must contain an items array")
+
+    mode = (mode or "replace").lower().strip()
+    if mode not in ("replace", "merge"):
+        raise HTTPException(400, "mode must be replace or merge")
+
+    deleted = 0
+    if mode == "replace":
+        deleted = db.query(OrderItem).delete()
+        db.commit()
+
+    inserted = 0
+    updated = 0
+    errors = 0
+
+    for row in items:
+        if not isinstance(row, dict):
+            errors += 1
+            continue
+        try:
+            # parse dates
+            def _d(v):
+                if not v:
+                    return None
+                if isinstance(v, date) and not isinstance(v, datetime):
+                    return v
+                s = str(v)[:10]
+                try:
+                    return datetime.strptime(s, "%Y-%m-%d").date()
+                except Exception:
+                    return None
+
+            def _dt(v):
+                if not v:
+                    return None
+                try:
+                    return datetime.fromisoformat(str(v).replace("Z", ""))
+                except Exception:
+                    return None
+
+            order_no = (row.get("order_number") or "")
+            if isinstance(order_no, str):
+                order_no = order_no.strip()
+            else:
+                order_no = str(order_no).strip() if order_no is not None else ""
+            item_code = row.get("item_code")
+            if item_code is not None:
+                item_code = str(item_code).strip()
+
+            existing = None
+            if mode == "merge" and order_no:
+                q = db.query(OrderItem).filter(OrderItem.order_number == order_no)
+                if item_code:
+                    q = q.filter(OrderItem.item_code == item_code)
+                existing = q.first()
+
+            fields = {
+                "customer_name": row.get("customer_name"),
+                "order_number": order_no or None,
+                "order_date": _d(row.get("order_date")),
+                "delivery_date": _d(row.get("delivery_date")),
+                "customer_order_number": row.get("customer_order_number"),
+                "product_image": row.get("product_image"),
+                "item_code": item_code,
+                "customer_item_code": row.get("customer_item_code"),
+                "sub_item_code": row.get("sub_item_code"),
+                "main_category": row.get("main_category"),
+                "sub_category": row.get("sub_category"),
+                "description": row.get("description"),
+                "container_size": row.get("container_size"),
+                "container_process": row.get("container_process"),
+                "container_color": row.get("container_color"),
+                "order_qty": row.get("order_qty"),
+                "retail_pack_rate": row.get("retail_pack_rate"),
+                "unit_qty": row.get("unit_qty"),
+                "unit_wax_weight_g": row.get("unit_wax_weight_g"),
+                "fragrance_net_content_ml": row.get("fragrance_net_content_ml"),
+                "total_wax_weight_kg": row.get("total_wax_weight_kg"),
+                "wax_material": row.get("wax_material"),
+                "solid_or_bubble_wax": row.get("solid_or_bubble_wax"),
+                "wick_count": row.get("wick_count"),
+                "wax_color": row.get("wax_color"),
+                "lid_process": row.get("lid_process"),
+                "fragrance_name": row.get("fragrance_name"),
+                "fragrance_code": row.get("fragrance_code"),
+                "fragrance_company": row.get("fragrance_company"),
+                "fragrance_ratio": row.get("fragrance_ratio"),
+                "quality_requirement": row.get("quality_requirement"),
+                "inspection_type": row.get("inspection_type"),
+                "inspection_requirement": row.get("inspection_requirement"),
+                "test_requirement": row.get("test_requirement"),
+                "sample_requirement": row.get("sample_requirement"),
+                "salesperson": row.get("salesperson"),
+                "remarks": row.get("remarks"),
+                "packaging_detail": row.get("packaging_detail"),
+                "merchandiser": row.get("merchandiser"),
+                "outer_box_barcode": row.get("outer_box_barcode"),
+                "outer_box_pack_rate": row.get("outer_box_pack_rate"),
+                "inner_box_barcode": row.get("inner_box_barcode"),
+                "retail_barcode": row.get("retail_barcode"),
+                "source_file": row.get("source_file") or f"restore:{file.filename}",
+            }
+            if existing:
+                for k, v in fields.items():
+                    if k == "product_image" and not v:
+                        continue
+                    setattr(existing, k, v)
+                existing.imported_at = _dt(row.get("imported_at")) or datetime.utcnow()
+                updated += 1
+            else:
+                obj = OrderItem(**fields)
+                obj.imported_at = _dt(row.get("imported_at")) or datetime.utcnow()
+                db.add(obj)
+                inserted += 1
+        except Exception:
+            errors += 1
+            continue
+
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Restore commit failed: {e}")
+
+    return {
+        "success": True,
+        "mode": mode,
+        "deleted": deleted,
+        "inserted": inserted,
+        "updated": updated,
+        "errors": errors,
+        "message": f"Restore OK ({mode}): {inserted} new, {updated} updated" + (f", cleared {deleted}" if deleted else ""),
+    }
 
 
 @app.get("/api/labels")

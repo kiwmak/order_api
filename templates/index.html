@@ -572,7 +572,14 @@
       <div class="toolbar">
         <input type="text" class="search-box" id="searchInput" placeholder="Search..." />
         <span class="stats" id="statsText"></span>
-        <button class="btn btn-danger auth-only" id="clearBtn" style="margin-left:auto;display:none;">
+        <button type="button" class="btn btn-ghost auth-only" id="backupBtn" style="display:none;margin-left:auto;">
+          <span id="ui-backup">Backup</span>
+        </button>
+        <button type="button" class="btn btn-ghost auth-only" id="restoreBtn" style="display:none;">
+          <span id="ui-restore">Restore</span>
+        </button>
+        <input type="file" id="restoreFileInput" accept=".json,application/json" style="display:none;" />
+        <button class="btn btn-danger auth-only" id="clearBtn" style="display:none;">
           <span id="ui-delete-all">Clear All Data</span>
         </button>
       </div>
@@ -763,6 +770,10 @@
       document.getElementById("ui-upload-btn").textContent = t("upload_btn");
       document.getElementById("ui-orders-list").textContent = t("orders_list");
       document.getElementById("ui-delete-all").textContent = t("delete_all");
+      const ub = document.getElementById("ui-backup");
+      const ur = document.getElementById("ui-restore");
+      if (ub) ub.textContent = t("backup");
+      if (ur) ur.textContent = t("restore");
       document.getElementById("ui-no-data").textContent = t("no_data");
       document.getElementById("ui-api-docs").textContent = t("api_docs") + " ↗";
       document.getElementById("searchInput").placeholder = t("search");
@@ -1056,6 +1067,66 @@
     });
 
     // Clear all
+
+    // ---- Backup ----
+    document.getElementById("backupBtn").addEventListener("click", async () => {
+      if (!isLoggedIn()) { showToast(t("need_login"), "error"); return; }
+      try {
+        const res = await authFetch("/api/backup");
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || "Backup failed");
+        }
+        const blob = await res.blob();
+        const cd = res.headers.get("Content-Disposition") || "";
+        let fname = "order_backup.json";
+        const m = cd.match(/filename="?([^";]+)"?/);
+        if (m) fname = m[1];
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = fname;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(a.href);
+        showToast(t("backup_ok"));
+      } catch (e) {
+        showToast(e.message || "Backup failed", "error");
+      }
+    });
+
+    // ---- Restore ----
+    document.getElementById("restoreBtn").addEventListener("click", () => {
+      if (!isLoggedIn()) { showToast(t("need_login"), "error"); return; }
+      document.getElementById("restoreFileInput").click();
+    });
+    document.getElementById("restoreFileInput").addEventListener("change", async (e) => {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = "";
+      if (!file) return;
+      const mode = confirm(
+        (lang === "vi"
+          ? "OK = Thay thế toàn bộ (XÓA data cũ)\nCancel = Gộp (cập nhật đơn đã có)"
+          : lang === "zh"
+          ? "确定=清空后恢复\n取消=合并更新"
+          : "OK = REPLACE all data\nCancel = MERGE (update existing)")
+      ) ? "replace" : "merge";
+      const confirmMsg = mode === "replace" ? t("restore_confirm_replace") : t("restore_confirm_merge");
+      if (!confirm(confirmMsg)) return;
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        const res = await authFetch("/api/restore?mode=" + mode, { method: "POST", body: fd });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Restore failed");
+        showToast(data.message || "Restore OK");
+        await loadOrders();
+        await loadDashboard();
+      } catch (err) {
+        showToast(err.message || "Restore failed", "error");
+      }
+    });
+
     document.getElementById("clearBtn").addEventListener("click", async () => {
       if (!isLoggedIn()) { showToast(t("need_login"), "error"); return; }
       if (!confirm(lang === "zh" ? "确定清空所有数据？" : lang === "vi" ? "Xác nhận xóa tất cả dữ liệu?" : "Clear all data?")) return;
