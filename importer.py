@@ -79,12 +79,14 @@ def _mime_for_name(name: str) -> str:
     return 'image/jpeg'
 
 
-def _extract_images_from_zip(file_path: str) -> Dict[int, str]:
+
+def _extract_images_from_zip(file_path: str) -> Dict[int, tuple]:
     """
-    Reliable image extraction: read xlsx as ZIP.
-    Parse drawing XML for row anchors + media files → data-URI map {excel_row: data_uri}.
+    Extract embedded images as bytes (NO upload yet).
+    Returns: { excel_row_1based: (raw_bytes, mime, filename) }
+    Upload to Supabase happens later only for rows that become valid order lines.
     """
-    row_to_url: Dict[int, str] = {}
+    row_to_img: Dict[int, tuple] = {}
     try:
         with zipfile.ZipFile(file_path, 'r') as z:
             names = z.namelist()
@@ -93,38 +95,18 @@ def _extract_images_from_zip(file_path: str) -> Dict[int, str]:
                 print('[importer] zip: no xl/media/* found')
                 return {}
 
-            # Load media BYTES first — upload to Storage only when linked to a data row
-            print(f"[importer] supabase storage configured={storage_configured()}")
-            media_bytes: Dict[str, tuple] = {}  # key -> (raw, mime, fname)
+            media_bytes: Dict[str, tuple] = {}
             for mpath in media:
                 raw = z.read(mpath)
                 fname = mpath.split('/')[-1]
                 mime = _mime_for_name(fname)
-                media_bytes[fname] = (raw, mime, fname)
-                media_bytes[mpath] = (raw, mime, fname)
-                media_bytes['../media/' + fname] = (raw, mime, fname)
-                media_bytes['media/' + fname] = (raw, mime, fname)
+                tup = (raw, mime, fname)
+                media_bytes[fname] = tup
+                media_bytes[mpath] = tup
+                media_bytes['../media/' + fname] = tup
+                media_bytes['media/' + fname] = tup
                 print(f'[importer] zip media loaded {fname} bytes={len(raw)}')
 
-            def _uri_for(target: str):
-                """Resolve target path/name to Storage URL or base64 (upload once per file)."""
-                if not target:
-                    return None
-                info = media_bytes.get(target) or media_bytes.get(target.split('/')[-1])
-                if not info:
-                    return None
-                raw, mime, fname = info
-                # cache on fname so same image not re-uploaded
-                cache_key = f"__uri__{fname}"
-                if cache_key in media_bytes:
-                    return media_bytes[cache_key]  # type: ignore
-                uri = image_ref_from_bytes(raw, mime=mime, filename_hint=fname)
-                media_bytes[cache_key] = uri  # type: ignore
-                kind = "storage" if str(uri).startswith("http") else "base64"
-                print(f'[importer] image ready {fname} -> {kind} len={len(str(uri))}')
-                return uri
-
-            # Parse relationships: rId -> media path
             rid_to_file: Dict[str, str] = {}
             for rel_name in [n for n in names if n.startswith('xl/drawings/_rels/') and n.endswith('.rels')]:
                 try:
@@ -133,12 +115,10 @@ def _extract_images_from_zip(file_path: str) -> Dict[int, str]:
                         rid = rel.attrib.get('Id') or rel.attrib.get('id')
                         target = rel.attrib.get('Target') or rel.attrib.get('target')
                         if rid and target:
-                            # Target like ../media/image1.jpeg
                             rid_to_file[rid] = target
                 except Exception as e:
                     print(f'[importer] rels parse {rel_name}: {e}')
 
-            # Parse drawing XML: twoCellAnchor / oneCellAnchor → row + r:embed
             NS = {
                 'xdr': 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing',
                 'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
@@ -155,9 +135,7 @@ def _extract_images_from_zip(file_path: str) -> Dict[int, str]:
                         row_el = from_el.find('xdr:row', NS)
                         if row_el is None or row_el.text is None:
                             continue
-                        row_0 = int(row_el.text)
-                        excel_row = row_0 + 1  # 0-based in XML → 1-based Excel
-
+                        excel_row = int(row_el.text) + 1
                         blip = anc.find('.//a:blip', NS)
                         if blip is None:
                             continue
@@ -169,25 +147,24 @@ def _extract_images_from_zip(file_path: str) -> Dict[int, str]:
                         target = rid_to_file.get(rid)
                         if not target:
                             continue
-                        # resolve + upload only for this row
-                        uri = _uri_for(target)
-                        if uri:
-                            row_to_url[excel_row] = uri
-                            print(f'[importer] zip map rId={rid} -> excel row {excel_row}')
+                        tup = media_bytes.get(target) or media_bytes.get(target.split('/')[-1])
+                        if tup:
+                            row_to_img[excel_row] = tup
+                            print(f'[importer] zip map rId={rid} -> excel row {excel_row} file={tup[2]}')
                 except Exception as e:
                     print(f'[importer] drawing parse {draw_name}: {e}')
 
-            # Fallback: sequential assign if no row mapping
-            if not row_to_url and media:
+            if not row_to_img and media:
                 for i, mpath in enumerate(media):
                     fname = mpath.split('/')[-1]
-                    uri = _uri_for(fname)
-                    if uri:
-                        row_to_url[2 + i] = uri  # data starts at row 2
+                    tup = media_bytes.get(fname)
+                    if tup:
+                        row_to_img[2 + i] = tup
                         print(f'[importer] zip sequential row {2+i} <- {fname}')
     except Exception as e:
         print(f'[importer] zip extract failed: {e}')
-    return row_to_url
+    return row_to_img
+
 
 
 def _extract_images(ws, upload_dir: str = None) -> Dict[int, str]:
@@ -239,12 +216,14 @@ def parse_excel(
     wb = openpyxl.load_workbook(file_path, data_only=False)
     ws = wb.active
 
-    # PRIMARY: zip-based extraction (reliable on all platforms / Koyeb)
-    row_images: Dict[int, str] = _extract_images_from_zip(file_path)
-    # Fallback: openpyxl drawings
+    # PRIMARY: zip bytes (upload later only for valid order rows)
+    row_images: Dict[int, Any] = _extract_images_from_zip(file_path)
+    # Fallback: openpyxl may return data-URI strings — normalize to tuple later
     if not row_images:
         upload_dir = os.path.join(static_dir, UPLOAD_SUBDIR) if static_dir else None
-        row_images = _extract_images(ws, upload_dir)
+        legacy = _extract_images(ws, upload_dir)
+        # legacy returns str URIs; keep as ("__uri__", uri, "")
+        row_images = {k: ("__uri__", v, "") for k, v in legacy.items()}
     print(f"[importer] FINAL image rows: {list(row_images.keys())} count={len(row_images)}")
 
     # Header row
@@ -273,9 +252,9 @@ def parse_excel(
 
         data: Dict[str, Any] = {"source_file": source_name}
 
-        # Attach image from same Excel row if any
+        # Attach image bytes from same Excel row (upload after row validated)
         if excel_row_idx in row_images:
-            data["product_image"] = row_images[excel_row_idx]
+            data["_img"] = row_images[excel_row_idx]
 
         for i, val in enumerate(row):
             if i >= len(field_names) or field_names[i] is None:
@@ -312,24 +291,52 @@ def parse_excel(
         if data.get("order_number") or data.get("item_code"):
             rows.append(data)
 
-    # Backfill: rows without image get remaining extracted images (in order)
-    assigned = {r.get("product_image") for r in rows if r.get("product_image")}
-    leftover = [uri for _, uri in sorted(row_images.items()) if uri not in assigned]
+    # Backfill image BYTES onto rows that still lack _img
+    assigned_keys = set()
+    for r in rows:
+        img = r.get("_img")
+        if img:
+            assigned_keys.add(id(img))
+    leftover = [tup for _, tup in sorted(row_images.items()) if id(tup) not in assigned_keys]
     if leftover:
         li = 0
         for r in rows:
-            if not r.get("product_image") and li < len(leftover):
-                r["product_image"] = leftover[li]
+            if not r.get("_img") and li < len(leftover):
+                r["_img"] = leftover[li]
                 li += 1
-                print(f"[importer] backfill image onto item {r.get('item_code')}")
+                print(f"[importer] backfill image bytes onto item {r.get('item_code')}")
+
+    # NOW upload (or base64) — only for valid data rows that will be saved
+    print(f"[importer] uploading images for {len(rows)} valid order row(s); storage={storage_configured()}")
+    for r in rows:
+        img = r.pop("_img", None)
+        if not img:
+            continue
+        if isinstance(img, tuple) and len(img) >= 2:
+            if img[0] == "__uri__":
+                # already a URL/data-URI from legacy path
+                r["product_image"] = img[1]
+            else:
+                raw, mime = img[0], img[1]
+                fname = img[2] if len(img) > 2 else ""
+                if isinstance(raw, bytes):
+                    r["product_image"] = image_ref_from_bytes(raw, mime=mime or "image/jpeg", filename_hint=fname)
+                else:
+                    r["product_image"] = None
+        elif isinstance(img, str):
+            r["product_image"] = img
+
+    if not rows:
+        print(f"[importer] WARNING: 0 data rows. headers={headers!r}")
+        print(f"[importer] field_names={field_names!r}")
 
     with_img = sum(1 for r in rows if r.get("product_image"))
     storage_n = sum(1 for r in rows if str(r.get("product_image") or "").startswith("http"))
     print(f"[importer] rows={len(rows)} with_images={with_img} storage_urls={storage_n}")
     for r in rows:
-        pi = r.get("product_image") or ""
+        pi = str(r.get("product_image") or "")
         if pi:
-            print(f"[importer]   item={r.get('item_code')} image={pi[:80]}...")
+            print(f"[importer]   item={r.get('item_code')} order={r.get('order_number')} image={pi[:100]}")
     return rows
 
 

@@ -345,8 +345,9 @@ def _import_bytes(content: bytes, filename: str, db: Session) -> FileImportDetai
             return FileImportDetail(
                 filename=filename,
                 imported_count=0,
-                error="No valid order rows found",
+                error="No valid order rows found (need order_number or item_code). Check Excel headers match mapping.",
             )
+        print(f"[import] {filename}: parsed {len(rows)} rows, images={sum(1 for r in rows if r.get('product_image'))}")
 
         inserted, updated, with_img = _upsert_rows(rows, db)
         return FileImportDetail(
