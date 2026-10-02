@@ -926,6 +926,48 @@
     }
     .table-wrap::-webkit-scrollbar-thumb:hover,
     .modal::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+    /* Pagination */
+    .pager {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-top: 1rem;
+      padding-top: 0.85rem;
+      border-top: 1px solid var(--border);
+    }
+    .pager-info {
+      font-size: 0.85rem;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .pager-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+    }
+    .pager-controls .btn {
+      min-width: 2.25rem;
+      padding: 0.4rem 0.7rem;
+      font-size: 0.82rem;
+    }
+    .pager-controls .btn.active-page {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+    }
+    .pager-controls select {
+      padding: 0.4rem 0.55rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-family: inherit;
+      background: white;
+      color: var(--text);
+    }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
@@ -1062,6 +1104,25 @@
           <p id="ui-no-data">No data yet. Please import an Excel file.</p>
         </div>
       </div>
+      <div class="pager" id="pager" style="display:none;">
+        <div class="pager-info" id="pagerInfo"></div>
+        <div class="pager-controls">
+          <label style="font-size:0.8rem;color:var(--muted);">
+            <select id="pageSizeSelect">
+              <option value="50">50</option>
+              <option value="100" selected>100</option>
+              <option value="200">200</option>
+              <option value="500">500</option>
+            </select>
+            / page
+          </label>
+          <button type="button" class="btn btn-ghost" id="pageFirst" title="First">«</button>
+          <button type="button" class="btn btn-ghost" id="pagePrev" title="Prev">‹</button>
+          <span id="pageNums" style="display:flex;gap:0.25rem;"></span>
+          <button type="button" class="btn btn-ghost" id="pageNext" title="Next">›</button>
+          <button type="button" class="btn btn-ghost" id="pageLast" title="Last">»</button>
+        </div>
+      </div>
     </div>
     </div><!-- /panel-orders -->
   </main>
@@ -1151,6 +1212,11 @@
     let lang = localStorage.getItem("order_lang") || "vi";
     let orders = [];
     let selectedFiles = [];  // File[] — multiple files
+    let ordersTotal = 0;
+    let ordersPage = 1;       // 1-based
+    let ordersPageSize = 100;
+    let ordersQuery = "";
+
     let authToken = localStorage.getItem("order_token") || "";
     let authUser = localStorage.getItem("order_user") || "";
     let currentDetailId = null;
@@ -1244,7 +1310,19 @@
       if (ur) ur.textContent = t("restore");
       document.getElementById("ui-no-data").textContent = t("no_data");
       document.getElementById("ui-api-docs").textContent = t("api_docs") + " ↗";
-      document.getElementById("searchInput").placeholder = t("search");
+      
+    // Pagination controls
+    document.getElementById("pageFirst").addEventListener("click", () => { ordersPage = 1; loadOrders(); });
+    document.getElementById("pagePrev").addEventListener("click", () => { if (ordersPage > 1) { ordersPage--; loadOrders(); } });
+    document.getElementById("pageNext").addEventListener("click", () => { if (ordersPage < totalPages()) { ordersPage++; loadOrders(); } });
+    document.getElementById("pageLast").addEventListener("click", () => { ordersPage = totalPages(); loadOrders(); });
+    document.getElementById("pageSizeSelect").addEventListener("change", (e) => {
+      ordersPageSize = parseInt(e.target.value, 10) || 100;
+      ordersPage = 1;
+      loadOrders();
+    });
+
+document.getElementById("searchInput").placeholder = t("search");
       document.getElementById("tab-dashboard").textContent = t("nav_dashboard");
       document.getElementById("tab-orders").textContent = t("nav_orders");
       document.getElementById("ui-chart-customer").textContent = t("chart_customer");
@@ -1357,11 +1435,78 @@
     });
 
     // ---- Load & render ----
-    async function loadOrders(q = "") {
-      const url = q ? `/api/orders?q=${encodeURIComponent(q)}` : "/api/orders";
-      const res = await fetch(url);
-      orders = await res.json();
+    async function loadOrders(q) {
+      if (typeof q === "string") {
+        if (q !== ordersQuery) {
+          ordersQuery = q;
+          ordersPage = 1;
+        }
+      }
+      const skip = (ordersPage - 1) * ordersPageSize;
+      const params = new URLSearchParams({
+        skip: String(skip),
+        limit: String(ordersPageSize),
+      });
+      if (ordersQuery) params.set("q", ordersQuery);
+      const res = await fetch("/api/orders?" + params.toString());
+      const data = await res.json();
+      // support both new {items,total} and legacy array
+      if (Array.isArray(data)) {
+        orders = data;
+        ordersTotal = data.length;
+      } else {
+        orders = data.items || [];
+        ordersTotal = data.total || 0;
+        if (typeof data.limit === "number") ordersPageSize = data.limit;
+      }
       renderTable();
+      renderPager();
+    }
+
+    function totalPages() {
+      return Math.max(1, Math.ceil(ordersTotal / ordersPageSize) || 1);
+    }
+
+    function renderPager() {
+      const pager = document.getElementById("pager");
+      if (!pager) return;
+      if (ordersTotal === 0) {
+        pager.style.display = "none";
+        return;
+      }
+      pager.style.display = "flex";
+      const pages = totalPages();
+      const from = ordersTotal === 0 ? 0 : (ordersPage - 1) * ordersPageSize + 1;
+      const to = Math.min(ordersPage * ordersPageSize, ordersTotal);
+      const info = lang === "vi"
+        ? `Hiển thị ${from}–${to} / ${ordersTotal.toLocaleString()} dòng`
+        : lang === "zh"
+        ? `显示 ${from}–${to} / ${ordersTotal} 条`
+        : `Showing ${from}–${to} of ${ordersTotal.toLocaleString()}`;
+      document.getElementById("pagerInfo").textContent = info;
+
+      document.getElementById("pageFirst").disabled = ordersPage <= 1;
+      document.getElementById("pagePrev").disabled = ordersPage <= 1;
+      document.getElementById("pageNext").disabled = ordersPage >= pages;
+      document.getElementById("pageLast").disabled = ordersPage >= pages;
+
+      // page number buttons (window around current)
+      const nums = document.getElementById("pageNums");
+      const windowSize = 5;
+      let start = Math.max(1, ordersPage - Math.floor(windowSize / 2));
+      let end = Math.min(pages, start + windowSize - 1);
+      start = Math.max(1, end - windowSize + 1);
+      let html = "";
+      for (let i = start; i <= end; i++) {
+        html += `<button type="button" class="btn btn-ghost${i === ordersPage ? " active-page" : ""}" data-page="${i}">${i}</button>`;
+      }
+      nums.innerHTML = html;
+      nums.querySelectorAll("[data-page]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          ordersPage = parseInt(btn.getAttribute("data-page"), 10);
+          loadOrders();
+        });
+      });
     }
 
     function renderTable() {
@@ -1371,7 +1516,14 @@
 
       thead.innerHTML = TABLE_COLS.map(c => `<th>${fl(c)}</th>`).join("") + `<th>${t("actions")}</th>`;
 
-      document.getElementById("statsText").textContent = t("total_items", orders.length);
+      document.getElementById("statsText").textContent =
+        ordersTotal > 0
+          ? (lang === "vi"
+              ? `${ordersTotal.toLocaleString()} dòng`
+              : lang === "zh"
+              ? `${ordersTotal} 条`
+              : `${ordersTotal.toLocaleString()} items`)
+          : t("total_items", 0);
 
       if (!orders.length) {
         tbody.innerHTML = "";
@@ -1383,8 +1535,12 @@
       tbody.innerHTML = orders.map(o => {
         const cells = TABLE_COLS.map(c => {
           if (c === "product_image") {
-            if (o.product_image) {
-              return `<td><img class="thumb" src="${o.product_image}" alt="" loading="lazy" onclick="event.stopPropagation(); openLightbox(this.src)" /></td>`;
+            const pi = o.product_image;
+            if (pi && pi !== "__has_image__" && !String(pi).startsWith("__")) {
+              return `<td><img class="thumb" src="${pi}" alt="" loading="lazy" onclick="event.stopPropagation(); openLightbox(this.src)" /></td>`;
+            }
+            if (pi === "__has_image__") {
+              return `<td><div class="thumb-placeholder" title="Has image">🖼️</div></td>`;
             }
             return `<td><div class="thumb-placeholder">📷</div></td>`;
           }
@@ -1427,8 +1583,18 @@
       }
     });
 
-    function showDetail(id) {
-      const o = orders.find(x => x.id === id);
+    async function showDetail(id) {
+      let o = orders.find(x => x.id === id);
+      // always fetch full record (list may omit base64 images)
+      try {
+        const res = await fetch("/api/orders/" + id);
+        if (res.ok) {
+          o = await res.json();
+          // merge into cache
+          const idx = orders.findIndex(x => x.id === id);
+          if (idx >= 0) orders[idx] = o;
+        }
+      } catch (e) {}
       if (!o) return;
       currentDetailId = id;
       editMode = false;

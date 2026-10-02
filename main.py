@@ -119,6 +119,13 @@ class ImportResult(BaseModel):
     details: List[FileImportDetail] = []
 
 
+class OrderListResponse(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    items: List[OrderItemOut]
+
+
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -443,14 +450,16 @@ async def import_excel(
 
 
 # ---------- API: List / Search ----------
-@app.get("/api/orders", response_model=List[OrderItemOut])
+@app.get("/api/orders", response_model=OrderListResponse)
 def list_orders(
     q: Optional[str] = Query(None, description="Search order_number / item_code / customer_name"),
     order_number: Optional[str] = Query(None),
-    skip: int = 0,
-    limit: int = 200,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    include_images: bool = Query(False, description="Include full product_image (heavy). Default false for list."),
     db: Session = Depends(get_db),
 ):
+    """Paginated order list. Default limit 100, max 500. Total count always returned."""
     query = db.query(OrderItem)
     if order_number:
         query = query.filter(OrderItem.order_number == order_number)
@@ -463,8 +472,20 @@ def list_orders(
             | (OrderItem.customer_item_code.ilike(like))
             | (OrderItem.description.ilike(like))
         )
+    total = query.count()
     items = query.order_by(OrderItem.id.desc()).offset(skip).limit(limit).all()
-    return items
+
+    # Lighten payload: base64 images are huge — mark presence only unless requested
+    out = []
+    for x in items:
+        row = OrderItemOut.model_validate(x) if hasattr(OrderItemOut, "model_validate") else OrderItemOut.from_orm(x)
+        if not include_images:
+            pi = row.product_image
+            if pi and str(pi).startswith("data:"):
+                row.product_image = "__has_image__"
+        out.append(row)
+
+    return OrderListResponse(total=total, skip=skip, limit=limit, items=out)
 
 
 @app.get("/api/orders/{item_id}", response_model=OrderItemOut)
