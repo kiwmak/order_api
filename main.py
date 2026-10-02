@@ -102,14 +102,16 @@ class OrderItemOut(BaseModel):
 
 class FileImportDetail(BaseModel):
     filename: str
-    imported_count: int
+    imported_count: int = 0  # new rows inserted
+    updated_count: int = 0   # existing rows updated (same order_number + item_code)
     image_count: int = 0
     error: Optional[str] = None
 
 
 class ImportResult(BaseModel):
     success: bool
-    imported_count: int
+    imported_count: int = 0  # total new inserts
+    updated_count: int = 0   # total updates
     file_count: int = 1
     message: str
     details: List[FileImportDetail] = []
@@ -227,8 +229,84 @@ def api_change_password(
 
 
 
+# Fields that can be updated on existing rows (exclude id / primary key)
+_UPDATE_FIELDS = [
+    "customer_name", "order_date", "delivery_date", "customer_order_number",
+    "product_image", "customer_item_code", "sub_item_code",
+    "main_category", "sub_category", "description",
+    "container_size", "container_process", "container_color",
+    "order_qty", "retail_pack_rate", "unit_qty", "unit_wax_weight_g",
+    "fragrance_net_content_ml", "total_wax_weight_kg", "wax_material",
+    "solid_or_bubble_wax", "wick_count", "wax_color", "lid_process",
+    "fragrance_name", "fragrance_code", "fragrance_company", "fragrance_ratio",
+    "quality_requirement", "inspection_type", "inspection_requirement",
+    "test_requirement", "sample_requirement", "salesperson", "remarks",
+    "packaging_detail", "merchandiser", "outer_box_barcode", "outer_box_pack_rate",
+    "inner_box_barcode", "retail_barcode", "source_file",
+]
+
+
+def _upsert_rows(rows: list, db: Session) -> tuple:
+    """
+    Insert or update by (order_number, item_code).
+    If order_number + item_code already exist → update all fields.
+    Otherwise → insert new row.
+    Returns (inserted, updated, image_count).
+    """
+    from datetime import datetime as _dt
+
+    items = rows_to_models(rows)
+    inserted = 0
+    updated = 0
+    image_count = 0
+
+    for item in items:
+        if item.product_image:
+            image_count += 1
+
+        order_no = (item.order_number or "").strip()
+        item_code = (item.item_code or "").strip() if item.item_code else ""
+
+        existing = None
+        if order_no and item_code:
+            existing = (
+                db.query(OrderItem)
+                .filter(
+                    OrderItem.order_number == order_no,
+                    OrderItem.item_code == item_code,
+                )
+                .first()
+            )
+        elif order_no:
+            # fallback: order_number only when item_code empty
+            from sqlalchemy import or_
+            existing = (
+                db.query(OrderItem)
+                .filter(
+                    OrderItem.order_number == order_no,
+                    or_(OrderItem.item_code.is_(None), OrderItem.item_code == ""),
+                )
+                .first()
+            )
+
+        if existing:
+            for field in _UPDATE_FIELDS:
+                new_val = getattr(item, field, None)
+                # Keep old image if new row has no image
+                if field == "product_image" and not new_val:
+                    continue
+                setattr(existing, field, new_val)
+            existing.imported_at = _dt.utcnow()
+            updated += 1
+        else:
+            db.add(item)
+            inserted += 1
+
+    return inserted, updated, image_count
+
+
 def _import_bytes(content: bytes, filename: str, db: Session) -> FileImportDetail:
-    """Parse one Excel from bytes, add rows to session. Caller commits."""
+    """Parse one Excel from bytes, upsert rows. Caller commits."""
     if not filename:
         return FileImportDetail(filename="(empty)", imported_count=0, error="No filename")
 
@@ -260,14 +338,11 @@ def _import_bytes(content: bytes, filename: str, db: Session) -> FileImportDetai
                 error="No valid order rows found",
             )
 
-        items = rows_to_models(rows)
-        for item in items:
-            db.add(item)
-
-        with_img = sum(1 for r in rows if r.get("product_image"))
+        inserted, updated, with_img = _upsert_rows(rows, db)
         return FileImportDetail(
             filename=filename,
-            imported_count=len(items),
+            imported_count=inserted,
+            updated_count=updated,
             image_count=with_img,
         )
     except Exception as e:
@@ -297,7 +372,8 @@ async def import_excel(
         raise HTTPException(400, "No file uploaded")
 
     details: List[FileImportDetail] = []
-    total = 0
+    total_new = 0
+    total_upd = 0
     total_img = 0
     errors = 0
 
@@ -320,27 +396,34 @@ async def import_excel(
 
         try:
             db.commit()
-            total += detail.imported_count
+            total_new += detail.imported_count
+            total_upd += detail.updated_count
             total_img += detail.image_count
             details.append(detail)
-            # free identity map (large base64 images)
             db.expunge_all()
         except Exception as e:
             db.rollback()
             details.append(FileImportDetail(
                 filename=fname,
                 imported_count=0,
+                updated_count=0,
                 image_count=0,
                 error=f"DB commit failed: {e}",
             ))
             errors += 1
 
-    if total == 0 and errors == len(uploads):
+    if total_new == 0 and total_upd == 0 and errors == len(uploads):
         msgs = "; ".join(f"{d.filename}: {d.error}" for d in details if d.error)
         raise HTTPException(400, f"Import failed for all files. {msgs}")
 
     ok_files = len(uploads) - errors
-    msg = f"Imported {total} order items from {ok_files}/{len(uploads)} file(s)"
+    parts = []
+    if total_new:
+        parts.append(f"{total_new} new")
+    if total_upd:
+        parts.append(f"{total_upd} updated")
+    summary = ", ".join(parts) if parts else "0 rows"
+    msg = f"{summary} from {ok_files}/{len(uploads)} file(s)"
     if total_img:
         msg += f" ({total_img} with images)"
     if errors:
@@ -349,7 +432,8 @@ async def import_excel(
 
     return ImportResult(
         success=errors == 0,
-        imported_count=total,
+        imported_count=total_new,
+        updated_count=total_upd,
         file_count=len(uploads),
         message=msg,
         details=details,
