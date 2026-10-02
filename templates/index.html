@@ -843,6 +843,7 @@
       font-weight: 600;
       font-size: 0.9rem;
       background: #f8fafc;
+      color: #0f172a;
     }
     .notif-list { max-height: 320px; overflow-y: auto; }
     .notif-item {
@@ -865,15 +866,42 @@
       border-bottom: 1px solid #fcd34d;
     }
 
-    /* Header auth buttons */
-    header .btn {
+    /* Header auth buttons — only direct header actions, NOT inside dropdown panels */
+    header > div > .btn,
+    header .btn#loginBtn,
+    header .btn#logoutBtn,
+    header .btn#changePassBtn {
       background: rgba(255,255,255,0.12) !important;
       color: white !important;
       border: 1px solid rgba(255,255,255,0.2) !important;
       backdrop-filter: blur(4px);
     }
-    header .btn:hover {
+    header > div > .btn:hover,
+    header .btn#loginBtn:hover,
+    header .btn#logoutBtn:hover,
+    header .btn#changePassBtn:hover {
       background: rgba(255,255,255,0.22) !important;
+    }
+    /* Notification panel is light — keep readable dark text */
+    .notif-panel .btn,
+    .notif-panel .btn-ghost,
+    #markReadBtn {
+      background: #f1f5f9 !important;
+      color: #1e293b !important;
+      border: 1px solid #e2e8f0 !important;
+      font-weight: 600;
+    }
+    .notif-panel .btn:hover,
+    #markReadBtn:hover {
+      background: #e2e8f0 !important;
+      color: #0f172a !important;
+    }
+    .notif-panel-header {
+      color: #0f172a;
+    }
+    .notif-panel-header span {
+      color: #0f172a !important;
+      font-weight: 600;
     }
 
     #itemChartInfo {
