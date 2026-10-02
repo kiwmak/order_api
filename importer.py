@@ -11,6 +11,7 @@ import openpyxl
 from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, TwoCellAnchor
 from models import OrderItem
 from translations import HEADER_MAP
+from storage import image_ref_from_bytes, storage_configured
 
 # Where product images are saved (relative URL path used in DB)
 UPLOAD_SUBDIR = "uploads"
@@ -92,19 +93,20 @@ def _extract_images_from_zip(file_path: str) -> Dict[int, str]:
                 print('[importer] zip: no xl/media/* found')
                 return {}
 
-            # Load all media as data-URIs keyed by filename
+            # Load media → Supabase Storage URL (preferred) or base64 fallback
+            print(f"[importer] supabase storage configured={storage_configured()}")
             media_uri: Dict[str, str] = {}
             for mpath in media:
                 raw = z.read(mpath)
                 fname = mpath.split('/')[-1]
                 mime = _mime_for_name(fname)
-                uri = f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+                uri = image_ref_from_bytes(raw, mime=mime, filename_hint=fname)
                 media_uri[fname] = uri
-                # also key by path variants
                 media_uri[mpath] = uri
                 media_uri['../media/' + fname] = uri
                 media_uri['media/' + fname] = uri
-                print(f'[importer] zip media {fname} bytes={len(raw)}')
+                kind = "storage" if uri.startswith("http") else "base64"
+                print(f'[importer] zip media {fname} bytes={len(raw)} -> {kind}')
 
             # Parse relationships: rId -> media path
             rid_to_file: Dict[str, str] = {}
@@ -193,7 +195,7 @@ def _extract_images(ws, upload_dir: str = None) -> Dict[int, str]:
                 continue
             fmt = (getattr(img, 'format', None) or 'jpeg').lower().replace('.', '')
             mime = 'image/png' if fmt == 'png' else 'image/jpeg'
-            uri = f"data:{mime};base64,{base64.b64encode(bytes(data)).decode('ascii')}"
+            uri = image_ref_from_bytes(bytes(data), mime=mime)
             if row_0 is not None:
                 row_to_url[int(row_0) + 1] = uri
             if upload_dir:
@@ -320,54 +322,80 @@ def parse_excel(
     return rows
 
 
+def _safe_int(val):
+    if val is None or val == "" or val == "/":
+        return None
+    try:
+        return int(float(str(val).strip().replace(",", "")))
+    except (ValueError, TypeError):
+        return None
+
+
+def _safe_float(val):
+    if val is None or val == "" or val == "/":
+        return None
+    try:
+        return float(str(val).strip().replace(",", ""))
+    except (ValueError, TypeError):
+        return None
+
+
+def _safe_str(val):
+    if val is None:
+        return None
+    s = str(val).strip()
+    return s if s and s != "/" else None
+
+
+
 def rows_to_models(rows: List[Dict[str, Any]]) -> List[OrderItem]:
     items = []
     for r in rows:
         item = OrderItem(
-            customer_name=r.get("customer_name"),
-            order_number=r.get("order_number"),
+            customer_name=_safe_str(r.get("customer_name")),
+            order_number=_safe_str(r.get("order_number")),
             order_date=r.get("order_date"),
             delivery_date=r.get("delivery_date"),
-            customer_order_number=r.get("customer_order_number"),
+            customer_order_number=_safe_str(r.get("customer_order_number")),
             product_image=r.get("product_image"),
             item_code=str(r.get("item_code")) if r.get("item_code") is not None else None,
-            customer_item_code=r.get("customer_item_code"),
-            sub_item_code=r.get("sub_item_code"),
-            main_category=r.get("main_category"),
-            sub_category=r.get("sub_category"),
-            description=r.get("description"),
-            container_size=r.get("container_size"),
-            container_process=r.get("container_process"),
-            container_color=r.get("container_color"),
-            order_qty=r.get("order_qty"),
-            retail_pack_rate=r.get("retail_pack_rate"),
-            unit_qty=r.get("unit_qty"),
-            unit_wax_weight_g=r.get("unit_wax_weight_g"),
-            fragrance_net_content_ml=r.get("fragrance_net_content_ml"),
-            total_wax_weight_kg=r.get("total_wax_weight_kg"),
-            wax_material=r.get("wax_material"),
-            solid_or_bubble_wax=r.get("solid_or_bubble_wax"),
-            wick_count=r.get("wick_count"),
-            wax_color=r.get("wax_color"),
-            lid_process=r.get("lid_process"),
-            fragrance_name=r.get("fragrance_name"),
-            fragrance_code=r.get("fragrance_code"),
-            fragrance_company=r.get("fragrance_company"),
-            fragrance_ratio=r.get("fragrance_ratio"),
-            quality_requirement=r.get("quality_requirement"),
-            inspection_type=r.get("inspection_type"),
-            inspection_requirement=r.get("inspection_requirement"),
-            test_requirement=r.get("test_requirement"),
-            sample_requirement=r.get("sample_requirement"),
-            salesperson=r.get("salesperson"),
-            remarks=r.get("remarks"),
-            packaging_detail=r.get("packaging_detail"),
-            merchandiser=r.get("merchandiser"),
-            outer_box_barcode=r.get("outer_box_barcode"),
-            outer_box_pack_rate=r.get("outer_box_pack_rate"),
-            inner_box_barcode=r.get("inner_box_barcode"),
-            retail_barcode=r.get("retail_barcode"),
-            source_file=r.get("source_file"),
+            customer_item_code=_safe_str(r.get("customer_item_code")),
+            sub_item_code=_safe_str(r.get("sub_item_code")),
+            main_category=_safe_str(r.get("main_category")),
+            sub_category=_safe_str(r.get("sub_category")),
+            description=_safe_str(r.get("description")),
+            container_size=_safe_str(r.get("container_size")),
+            container_process=_safe_str(r.get("container_process")),
+            container_color=_safe_str(r.get("container_color")),
+            order_qty=_safe_int(r.get("order_qty")),
+            retail_pack_rate=_safe_int(r.get("retail_pack_rate")),
+            unit_qty=_safe_int(r.get("unit_qty")),
+            unit_wax_weight_g=_safe_float(r.get("unit_wax_weight_g")),
+            fragrance_net_content_ml=_safe_str(r.get("fragrance_net_content_ml")),
+            total_wax_weight_kg=_safe_str(r.get("total_wax_weight_kg")),
+            wax_material=_safe_str(r.get("wax_material")),
+            solid_or_bubble_wax=_safe_str(r.get("solid_or_bubble_wax")),
+            wick_count=_safe_int(r.get("wick_count")),
+            wax_color=_safe_str(r.get("wax_color")),
+            lid_process=_safe_str(r.get("lid_process")),
+            fragrance_name=_safe_str(r.get("fragrance_name")),
+            fragrance_code=_safe_str(r.get("fragrance_code")),
+            fragrance_company=_safe_str(r.get("fragrance_company")),
+            fragrance_ratio=_safe_str(r.get("fragrance_ratio")),
+            quality_requirement=_safe_str(r.get("quality_requirement")),
+            inspection_type=_safe_str(r.get("inspection_type")),
+            inspection_requirement=_safe_str(r.get("inspection_requirement")),
+            test_requirement=_safe_str(r.get("test_requirement")),
+            sample_requirement=_safe_str(r.get("sample_requirement")),
+            salesperson=_safe_str(r.get("salesperson")),
+            remarks=_safe_str(r.get("remarks")),
+            packaging_detail=_safe_str(r.get("packaging_detail")),
+            merchandiser=_safe_str(r.get("merchandiser")),
+            outer_box_barcode=_safe_str(r.get("outer_box_barcode")),
+            outer_box_pack_rate=_safe_int(r.get("outer_box_pack_rate")),
+            inner_box_barcode=_safe_str(r.get("inner_box_barcode")),
+            retail_barcode=_safe_str(r.get("retail_barcode")),
+            source_file=_safe_str(r.get("source_file")),
         )
         items.append(item)
     return items

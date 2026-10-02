@@ -92,3 +92,21 @@ ORDER_ADMIN_PASS=your-strong-password
 ORDER_API_SECRET=random-long-secret-string
 PORT=8000
 ```
+
+## Supabase Storage (product images)
+
+1. Supabase → **Storage** → New bucket: `order-images`
+2. Set bucket to **Public** (so `<img src>` works without signed URLs)
+3. Koyeb environment variables:
+
+| Name | Value |
+|------|--------|
+| `SUPABASE_URL` | `https://YOUR_PROJECT.supabase.co` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Project Settings → API → `service_role` (secret) |
+| `SUPABASE_BUCKET` | `order-images` |
+
+4. Redeploy → import Excel again. Images go to Storage; DB only stores the public URL.
+
+Fallback: if env not set, images still save as base64 in DB (old behavior).
+
+Check: `GET /api/storage/status` (requires login).

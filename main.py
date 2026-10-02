@@ -774,6 +774,21 @@ async def restore_database(
     }
 
 
+
+@app.get("/api/storage/status")
+def storage_status(user: str = Depends(get_current_user)):
+    """Check whether Supabase Storage is configured (no secrets returned)."""
+    from storage import storage_configured, _bucket
+    import os
+    url = (os.environ.get("SUPABASE_URL") or "").strip()
+    return {
+        "configured": storage_configured(),
+        "bucket": _bucket() if storage_configured() else None,
+        "supabase_url_set": bool(url),
+        "hint": None if storage_configured() else "Set SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_BUCKET on the server",
+    }
+
+
 @app.get("/api/labels")
 def get_labels(lang: str = Query("en", pattern="^(zh|en|vi)$")):
     """Return field labels in the requested language."""
