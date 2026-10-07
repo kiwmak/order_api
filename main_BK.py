@@ -19,10 +19,10 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, Res
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc, cast, String
+from sqlalchemy import func, desc
 from pydantic import BaseModel
 
-from models import init_db, get_db, OrderItem, SessionLocal, db_info, engine
+from models import init_db, get_db, OrderItem, SessionLocal
 from importer import parse_excel, rows_to_models
 from translations import FIELD_LABELS, UI_TEXT
 from auth import (
@@ -188,19 +188,6 @@ class OrderItemUpdate(BaseModel):
 @app.on_event("startup")
 def on_startup():
     init_db()
-    info = db_info()
-    print("=" * 60)
-    print(f"[startup] DATABASE dialect={info['dialect']} postgres={info['is_postgres']}")
-    print(f"[startup] DATABASE url={info['url_safe']}")
-    if info["using_sqlite_fallback"]:
-        print("[startup] WARNING: Using local SQLite — data will NOT appear in Supabase Table Editor!")
-        print("[startup] Set env DATABASE_URL to your Supabase Postgres connection string.")
-    try:
-        from storage import storage_configured
-        print(f"[startup] Supabase Storage configured={storage_configured()}")
-    except Exception as e:
-        print(f"[startup] storage check: {e}")
-    print("=" * 60)
 
 
 # ---------- Web UI ----------
@@ -447,10 +434,7 @@ async def import_excel(
     if total_upd:
         parts.append(f"{total_upd} updated")
     summary = ", ".join(parts) if parts else "0 rows"
-    info = db_info()
-    msg = f"{summary} from {ok_files}/{len(uploads)} file(s) [DB={info['dialect']}]"
-    if info.get("using_sqlite_fallback"):
-        msg += " ⚠ SQLite local — set DATABASE_URL for Supabase!"
+    msg = f"{summary} from {ok_files}/{len(uploads)} file(s)"
     if total_img:
         msg += f" ({total_img} with images)"
     if errors:
@@ -468,37 +452,10 @@ async def import_excel(
 
 
 # ---------- API: List / Search ----------
-ORDER_FILTER_FIELDS = {
-    "order_number", "customer_name", "item_code", "customer_item_code",
-    "description", "order_qty", "container_size", "fragrance_name",
-    "salesperson", "merchandiser",
-}
-
-
-def _decode_order_filters(filters: Optional[str]) -> dict:
-    if not filters:
-        return {}
-    try:
-        parsed = json.loads(filters)
-    except (TypeError, json.JSONDecodeError) as exc:
-        raise HTTPException(status_code=400, detail="Invalid column filters") from exc
-    if not isinstance(parsed, dict):
-        raise HTTPException(status_code=400, detail="Column filters must be an object")
-    for field, value in parsed.items():
-        if field not in ORDER_FILTER_FIELDS:
-            raise HTTPException(status_code=400, detail="Invalid column filter")
-        if isinstance(value, str):
-            continue
-        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-            raise HTTPException(status_code=400, detail="Invalid column filter")
-    return parsed
-
-
 @app.get("/api/orders", response_model=OrderListResponse)
 def list_orders(
     q: Optional[str] = Query(None, description="Search order_number / item_code / customer_name"),
     order_number: Optional[str] = Query(None),
-    filters: Optional[str] = Query(None, description="JSON object of column contains-filters"),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     include_images: bool = Query(False, description="Include full product_image (heavy). Default false for list."),
@@ -517,22 +474,8 @@ def list_orders(
             | (OrderItem.customer_item_code.ilike(like))
             | (OrderItem.description.ilike(like))
         )
-    for field, value in _decode_order_filters(filters).items():
-        column = getattr(OrderItem, field)
-        value_expr = func.coalesce(cast(column, String), "")
-        if isinstance(value, str):
-            value = value.strip()
-            if value:
-                query = query.filter(value_expr.ilike(f"%{value}%"))
-        elif not value:
-            query = query.filter(False)
-        else:
-            query = query.filter(value_expr.in_(value))
     total = query.count()
-    items = query.order_by(
-        func.upper(func.coalesce(OrderItem.order_number, "")).desc(),
-        OrderItem.id.desc(),
-    ).offset(skip).limit(limit).all()
+    items = query.order_by(OrderItem.id.desc()).offset(skip).limit(limit).all()
 
     # Lighten payload: base64 images are huge — mark presence only unless requested
     out = []
@@ -546,96 +489,6 @@ def list_orders(
         out.append(row)
 
     return OrderListResponse(total=total, skip=skip, limit=limit, items=out)
-
-
-@app.get("/api/orders/filter-values/{field}")
-def list_order_filter_values(
-    field: str,
-    q: Optional[str] = Query(None),
-    filters: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
-):
-    if field not in ORDER_FILTER_FIELDS:
-        raise HTTPException(status_code=404, detail="Unknown filter field")
-
-    query = db.query(
-        func.coalesce(cast(getattr(OrderItem, field), String), "").label("value"),
-        func.count(OrderItem.id).label("count"),
-    )
-    if q:
-        like = f"%{q}%"
-        query = query.filter(
-            (OrderItem.order_number.ilike(like))
-            | (OrderItem.item_code.ilike(like))
-            | (OrderItem.customer_name.ilike(like))
-            | (OrderItem.customer_item_code.ilike(like))
-            | (OrderItem.description.ilike(like))
-        )
-    for filter_field, values in _decode_order_filters(filters).items():
-        if filter_field == field:
-            continue
-        column = getattr(OrderItem, filter_field)
-        value_expr = func.coalesce(cast(column, String), "")
-        if isinstance(values, str):
-            if values.strip():
-                query = query.filter(value_expr.ilike(f"%{values.strip()}%"))
-        elif not values:
-            query = query.filter(False)
-        else:
-            query = query.filter(value_expr.in_(values))
-
-    value_expr = func.coalesce(cast(getattr(OrderItem, field), String), "")
-    rows = query.group_by(value_expr).order_by(func.lower(value_expr), value_expr).all()
-    return {"items": [{"value": value, "count": count} for value, count in rows]}
-
-
-
-@app.get("/api/orders/summary")
-def orders_summary(
-    q: Optional[str] = Query(None, description="Filter by order_number / customer"),
-    db: Session = Depends(get_db),
-):
-    """Sidebar list: one card per order_number with qty / line counts."""
-    query = (
-        db.query(
-            OrderItem.order_number,
-            func.max(OrderItem.customer_name).label("customer_name"),
-            func.count(OrderItem.id).label("line_count"),
-            func.coalesce(func.sum(OrderItem.order_qty), 0).label("qty"),
-            func.max(OrderItem.order_date).label("order_date"),
-            func.max(OrderItem.delivery_date).label("delivery_date"),
-            func.max(OrderItem.imported_at).label("imported_at"),
-        )
-        .filter(OrderItem.order_number.isnot(None))
-        .filter(OrderItem.order_number != "")
-        .group_by(OrderItem.order_number)
-    )
-    if q:
-        like = f"%{q}%"
-        # filter groups whose order_number or any customer matches
-        matching = (
-            db.query(OrderItem.order_number)
-            .filter(
-                (OrderItem.order_number.ilike(like))
-                | (OrderItem.customer_name.ilike(like))
-                | (OrderItem.item_code.ilike(like))
-            )
-            .distinct()
-            .subquery()
-        )
-        query = query.filter(OrderItem.order_number.in_(matching))
-    rows = query.order_by(desc("imported_at"), desc(OrderItem.order_number)).all()
-    return [
-        {
-            "order_number": r.order_number,
-            "customer_name": r.customer_name,
-            "line_count": int(r.line_count or 0),
-            "qty": int(r.qty or 0),
-            "order_date": r.order_date.isoformat() if r.order_date else None,
-            "delivery_date": r.delivery_date.isoformat() if r.delivery_date else None,
-        }
-        for r in rows
-    ]
 
 
 @app.get("/api/orders/{item_id}", response_model=OrderItemOut)
@@ -936,34 +789,6 @@ def storage_status(user: str = Depends(get_current_user)):
         "bucket": _bucket() if storage_configured() else None,
         "supabase_url_set": bool(url),
         "hint": None if storage_configured() else "Set SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_BUCKET on the server",
-    }
-
-
-
-@app.get("/api/health")
-def health(db: Session = Depends(get_db)):
-    """Public health: which DB + how many rows (diagnose empty Supabase)."""
-    info = db_info()
-    try:
-        count = db.query(OrderItem).count()
-    except Exception as e:
-        count = -1
-        info["count_error"] = str(e)
-    try:
-        from storage import storage_configured, _bucket
-        storage = {"configured": storage_configured(), "bucket": _bucket() if storage_configured() else None}
-    except Exception as e:
-        storage = {"configured": False, "error": str(e)}
-    return {
-        "ok": True,
-        "database": info,
-        "order_items_count": count,
-        "storage": storage,
-        "hint": (
-            "DATA goes to SQLite (not Supabase). Set DATABASE_URL on Koyeb."
-            if info.get("using_sqlite_fallback")
-            else None
-        ),
     }
 
 
