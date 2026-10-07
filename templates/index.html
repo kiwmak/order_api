@@ -2283,14 +2283,14 @@ document.getElementById("searchInput").placeholder = t("search");
           badge.classList.add("show");
           list.innerHTML = data.items.map(x =>
             `<div class="notif-item">
-              <strong>${esc(x.order_number || "")}</strong>
+              <strong>${esc(x.order_number || "")}</strong> . ${Number(x.item_count || 0)} mã . ${esc(x.customer_name || "") || "—"} . ${Number(x.total_qty || 0)} hàng
             </div>`
           ).join("");
           if (!silent) {
-            const firstOrder = data.items && data.items.length ? (data.items[0].order_number || "") : "";
-            const customerName = data.items && data.items.length ? (data.items[0].customer_name || "") : "";
-            const totalQty = (data.items || []).reduce((sum, x) => sum + (Number(x.order_qty) || 0), 0);
-            showToast(`BÁO ${firstOrder} . ${data.new_count} mã . ${customerName} . ${totalQty} hàng`, "success");
+            const first = data.items && data.items.length ? data.items[0] : null;
+            if (first) {
+              showToast(`BÁO ${first.order_number || ""} . ${Number(first.item_count || 0)} mã . ${first.customer_name || ""} . ${Number(first.total_qty || 0)} hàng`, "success");
+            }
           }
         } else {
           badge.classList.remove("show");

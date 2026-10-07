@@ -1033,22 +1033,37 @@ def notifications(
             db.query(OrderItem)
             .filter(OrderItem.id > since_id)
             .order_by(OrderItem.id.desc())
-            .limit(20)
             .all()
         )
-        new_count = (
-            db.query(OrderItem).filter(OrderItem.id > since_id).count()
-        )
+
+        grouped = {}
+        for x in q:
+            order_number = x.order_number or "UNKNOWN"
+            group = grouped.setdefault(
+                order_number,
+                {
+                    "order_number": order_number,
+                    "customer_name": x.customer_name,
+                    "item_count": 0,
+                    "total_qty": 0,
+                },
+            )
+            group["item_count"] += 1
+            group["total_qty"] += int(x.order_qty or 0)
+            if not group["customer_name"] and x.customer_name:
+                group["customer_name"] = x.customer_name
+
         newest = [
             {
-                "id": x.id,
-                "order_number": x.order_number,
-                "item_code": x.item_code,
-                "customer_name": x.customer_name,
-                "order_qty": x.order_qty,
+                "order_number": v["order_number"],
+                "customer_name": v["customer_name"],
+                "item_count": v["item_count"],
+                "total_qty": v["total_qty"],
             }
-            for x in q
+            for v in grouped.values()
         ]
+        newest.sort(key=lambda x: x["order_number"], reverse=True)
+        new_count = len(newest)
     return {
         "max_id": max_id,
         "new_count": new_count,
