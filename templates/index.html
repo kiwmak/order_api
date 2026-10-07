@@ -1756,6 +1756,57 @@ document.getElementById("searchInput").placeholder = t("search");
       }
     });
 
+    async function showOrderDetailByNumber(orderNumber) {
+      if (!orderNumber) return;
+      try {
+        const res = await fetch(`/api/orders/by-number/${encodeURIComponent(orderNumber)}`);
+        if (!res.ok) throw new Error("Could not load order details");
+        const items = await res.json();
+        if (!Array.isArray(items) || !items.length) {
+          showToast(lang === "vi" ? "Không có chi tiết cho đơn này" : lang === "zh" ? "此订单无详细信息" : "No details for this order", "error");
+          return;
+        }
+        currentDetailId = null;
+        document.getElementById("modalTitle").textContent = `${orderNumber} · ${items.length} mã`;
+        document.getElementById("detailGrid").style.display = "";
+        document.getElementById("editForm").style.display = "none";
+        document.getElementById("editActions").style.display = "none";
+        document.getElementById("editBtn").style.display = "none";
+        document.getElementById("deleteItemBtn").style.display = "none";
+
+        const first = items[0] || {};
+        const itemsHtml = items.map(item => `
+          <div class="detail-item" style="grid-column:1 / -1;">
+            <label>Mã hàng</label>
+            <span class="val">${esc(item.item_code || "—")}</span>
+          </div>
+          <div class="detail-item">
+            <label>${lang === "vi" ? "Khách hàng" : lang === "zh" ? "客户" : "Customer"}</label>
+            <span class="val">${esc(item.customer_name || first.customer_name || "—")}</span>
+          </div>
+          <div class="detail-item">
+            <label>${lang === "vi" ? "Số lượng" : lang === "zh" ? "数量" : "Qty"}</label>
+            <span class="val">${Number(item.order_qty ?? 0).toLocaleString()}</span>
+          </div>
+          <div class="detail-item">
+            <label>${lang === "vi" ? "Mô tả" : lang === "zh" ? "描述" : "Description"}</label>
+            <span class="val">${esc(item.description || "—")}</span>
+          </div>
+        `).join("");
+
+        document.getElementById("detailGrid").innerHTML = `
+          <div class="detail-section">
+            <div class="detail-section-title"><span class="icon">📦</span> ${lang === "vi" ? "Chi tiết đơn hàng" : lang === "zh" ? "订单详情" : "Order details"}</div>
+            <div class="detail-grid" style="grid-template-columns:repeat(2,minmax(0,1fr));">${itemsHtml}</div>
+          </div>
+        `;
+        document.getElementById("modal").classList.add("open");
+      } catch (e) {
+        console.warn("notif-detail", e);
+        showToast(e.message || "Load details failed", "error");
+      }
+    }
+
     async function showDetail(id) {
       let o = orders.find(x => x.id === id);
       // always fetch full record (list may omit base64 images)
@@ -2282,10 +2333,16 @@ document.getElementById("searchInput").placeholder = t("search");
           badge.textContent = data.new_count > 99 ? "99+" : String(data.new_count);
           badge.classList.add("show");
           list.innerHTML = data.items.map(x =>
-            `<div class="notif-item">
+            `<div class="notif-item" data-order-number="${esc(x.order_number || "")}" style="cursor:pointer;">
               <strong>${esc(x.order_number || "")}</strong> - ${esc(x.customer_name || "—")} : ${Number(x.item_count || 0)} mã . ${Number(x.total_qty || 0)} hàng
             </div>`
           ).join("");
+          list.querySelectorAll(".notif-item").forEach(item => {
+            item.addEventListener("click", () => {
+              const orderNumber = item.dataset.orderNumber;
+              if (orderNumber) showOrderDetailByNumber(orderNumber);
+            });
+          });
           if (!silent) {
             const first = data.items && data.items.length ? data.items[0] : null;
             if (first) {
