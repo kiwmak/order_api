@@ -226,74 +226,6 @@
       top: 0;
       z-index: 1;
     }
-    .th-content { display: flex; align-items: center; gap: 0.4rem; }
-    .column-filter-btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 1.4rem;
-      height: 1.4rem;
-      flex: 0 0 1.4rem;
-      border: 1px solid transparent;
-      border-radius: 4px;
-      background: transparent;
-      color: #64748b;
-      cursor: pointer;
-      font: inherit;
-      line-height: 1;
-    }
-    .column-filter-btn:hover, .column-filter-btn.active {
-      color: #1d4ed8;
-      border-color: #bfdbfe;
-      background: #eff6ff;
-    }
-    .column-filter-menu {
-      position: fixed;
-      z-index: 120;
-      width: min(320px, calc(100vw - 16px));
-      padding: 0.75rem;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: white;
-      box-shadow: var(--shadow-lg);
-    }
-    .column-filter-menu input[type="search"] {
-      width: 100%;
-      padding: 0.55rem 0.65rem;
-      border: 1px solid var(--border);
-      border-radius: 5px;
-      font: inherit;
-      outline: none;
-    }
-    .column-filter-menu input[type="search"]:focus { border-color: var(--primary); }
-    .column-filter-select-all, .column-filter-value {
-      display: grid;
-      grid-template-columns: 1rem minmax(0, 1fr) auto;
-      align-items: center;
-      gap: 0.55rem;
-      min-height: 2rem;
-      cursor: pointer;
-      font-size: 0.82rem;
-    }
-    .column-filter-select-all { padding: 0.35rem 0; border-bottom: 1px solid var(--border); font-weight: 600; }
-    .column-filter-value { padding: 0.2rem 0.1rem; }
-    .column-filter-value:hover { background: #f8fafc; }
-    .column-filter-select-all input, .column-filter-value input { accent-color: var(--primary); margin: 0; }
-    .column-filter-value span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .column-filter-count { color: var(--muted); font-size: 0.75rem; }
-    .column-filter-values { max-height: 280px; overflow-y: auto; margin-top: 0.25rem; }
-    .column-filter-empty { padding: 0.75rem 0.2rem; color: var(--muted); font-size: 0.8rem; }
-    .column-filter-actions { display: flex; justify-content: space-between; gap: 0.5rem; margin-top: 0.65rem; }
-    .column-filter-actions button {
-      padding: 0.4rem 0.6rem;
-      border: 1px solid var(--border);
-      border-radius: 5px;
-      background: white;
-      color: var(--text);
-      cursor: pointer;
-      font: inherit;
-    }
-    .column-filter-actions button[data-action="apply"] { background: var(--primary); color: white; border-color: var(--primary); }
     tr:hover td { background: #f8fafc; }
     tbody tr.row-click { cursor: pointer; transition: background 0.1s; }
     tbody tr.row-click:hover td { background: var(--primary-soft); }
@@ -1284,7 +1216,6 @@
     let ordersPage = 1;       // 1-based
     let ordersPageSize = 100;
     let ordersQuery = "";
-    const columnFilters = {};
 
     let authToken = localStorage.getItem("order_token") || "";
     let authUser = localStorage.getItem("order_user") || "";
@@ -1517,7 +1448,6 @@ document.getElementById("searchInput").placeholder = t("search");
         limit: String(ordersPageSize),
       });
       if (ordersQuery) params.set("q", ordersQuery);
-      if (Object.keys(columnFilters).length) params.set("filters", JSON.stringify(columnFilters));
       const res = await fetch("/api/orders?" + params.toString());
       const data = await res.json();
       // support both new {items,total} and legacy array
@@ -1584,10 +1514,7 @@ document.getElementById("searchInput").placeholder = t("search");
       const tbody = document.getElementById("tbody");
       const empty = document.getElementById("emptyState");
 
-      thead.innerHTML = TABLE_COLS.map(c => {
-        const filterButton = c === "product_image" ? "" : `<button type="button" class="column-filter-btn${Object.prototype.hasOwnProperty.call(columnFilters, c) ? " active" : ""}" data-filter-field="${c}" title="Filter ${esc(fl(c))}" aria-label="Filter ${esc(fl(c))}">▾</button>`;
-        return `<th><div class="th-content"><span>${esc(fl(c))}</span>${filterButton}</div></th>`;
-      }).join("") + `<th>${t("actions")}</th>`;
+      thead.innerHTML = TABLE_COLS.map(c => `<th>${fl(c)}</th>`).join("") + `<th>${t("actions")}</th>`;
 
       document.getElementById("statsText").textContent =
         ordersTotal > 0
@@ -1625,106 +1552,6 @@ document.getElementById("searchInput").placeholder = t("search");
         return `<tr class="row-click" onclick="showDetail(${o.id})">${cells}<td><button class="btn btn-ghost" style="padding:0.3rem 0.6rem;font-size:0.8rem;" onclick="event.stopPropagation(); showDetail(${o.id})">${t("detail")}</button></td></tr>`;
       }).join("");
     }
-
-    function closeColumnFilter() {
-      document.getElementById("columnFilterMenu")?.remove();
-    }
-
-    function openColumnFilter(field, anchor) {
-      closeColumnFilter();
-      const menu = document.createElement("div");
-      menu.id = "columnFilterMenu";
-      menu.className = "column-filter-menu";
-      const searchPlaceholder = lang === "vi" ? "Tìm trong danh sách..." : lang === "zh" ? "搜索列表..." : "Search values...";
-      const selectAllLabel = lang === "vi" ? "Chọn tất cả" : lang === "zh" ? "全选" : "Select all";
-      const applyLabel = lang === "vi" ? "Áp dụng" : lang === "zh" ? "应用" : "Apply";
-      const clearLabel = lang === "vi" ? "Xóa lọc" : lang === "zh" ? "清除筛选" : "Clear";
-      const emptyLabel = lang === "vi" ? "Không có giá trị phù hợp" : lang === "zh" ? "没有匹配的值" : "No matching values";
-      const blankLabel = lang === "vi" ? "(Trống)" : lang === "zh" ? "(空白)" : "(Blanks)";
-      menu.innerHTML = `<input type="search" data-filter-search placeholder="${searchPlaceholder}" aria-label="${searchPlaceholder}"><label class="column-filter-select-all"><input type="checkbox" data-select-all><span>${selectAllLabel}</span><span data-selected-count></span></label><div class="column-filter-values" data-filter-values><div class="column-filter-empty">...</div></div><div class="column-filter-actions"><button type="button" data-action="clear">${clearLabel}</button><button type="button" data-action="apply">${applyLabel}</button></div>`;
-      document.body.appendChild(menu);
-      let values = [];
-      let selected = new Set();
-      const searchInput = menu.querySelector("[data-filter-search]");
-      const valuesContainer = menu.querySelector("[data-filter-values]");
-      const selectAll = menu.querySelector("[data-select-all]");
-      const placeMenu = () => {
-        const bounds = anchor.getBoundingClientRect();
-        const menuWidth = Math.min(320, window.innerWidth - 16);
-        menu.style.left = `${Math.max(8, Math.min(bounds.left, window.innerWidth - menuWidth - 8))}px`;
-        menu.style.top = `${Math.max(8, Math.min(bounds.bottom + 4, window.innerHeight - menu.offsetHeight - 8))}px`;
-      };
-      const renderValues = () => {
-        const needle = searchInput.value.trim().toLocaleLowerCase();
-        const visibleValues = values.filter(item => item.value.toLocaleLowerCase().includes(needle));
-        valuesContainer.innerHTML = visibleValues.length
-          ? visibleValues.map(item => `<label class="column-filter-value"><input type="checkbox" data-filter-value="${esc(item.value)}"${selected.has(item.value) ? " checked" : ""}><span title="${esc(item.value || blankLabel)}">${esc(item.value || blankLabel)}</span><small class="column-filter-count">(${Number(item.count).toLocaleString()})</small></label>`).join("")
-          : `<div class="column-filter-empty">${emptyLabel}</div>`;
-        selectAll.checked = values.length > 0 && selected.size === values.length;
-        selectAll.indeterminate = selected.size > 0 && selected.size < values.length;
-        menu.querySelector("[data-selected-count]").textContent = `${selected.size}/${values.length}`;
-        placeMenu();
-      };
-
-      const params = new URLSearchParams();
-      if (ordersQuery) params.set("q", ordersQuery);
-      const otherFilters = Object.fromEntries(Object.entries(columnFilters).filter(([key]) => key !== field));
-      if (Object.keys(otherFilters).length) params.set("filters", JSON.stringify(otherFilters));
-      fetch(`/api/orders/filter-values/${encodeURIComponent(field)}?${params.toString()}`)
-        .then(async response => {
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.detail || "Could not load filter values");
-          return data.items || [];
-        })
-        .then(items => {
-          if (!menu.isConnected) return;
-          values = items;
-          selected = new Set(Object.prototype.hasOwnProperty.call(columnFilters, field)
-            ? columnFilters[field]
-            : values.map(item => item.value));
-          renderValues();
-          searchInput.focus();
-        })
-        .catch(error => {
-          if (menu.isConnected) valuesContainer.innerHTML = `<div class="column-filter-empty">${esc(error.message)}</div>`;
-        });
-      placeMenu();
-      searchInput.addEventListener("input", renderValues);
-      menu.addEventListener("change", event => {
-        if (event.target === selectAll) {
-          selected = selectAll.checked ? new Set(values.map(item => item.value)) : new Set();
-          renderValues();
-          return;
-        }
-        if (event.target.hasAttribute("data-filter-value")) {
-          const value = event.target.dataset.filterValue;
-          if (event.target.checked) selected.add(value);
-          else selected.delete(value);
-          renderValues();
-        }
-      });
-      menu.addEventListener("click", event => {
-        const action = event.target.closest("button")?.dataset.action;
-        if (!action) return;
-        if (action === "clear" || selected.size === values.length) delete columnFilters[field];
-        else columnFilters[field] = [...selected];
-        closeColumnFilter();
-        ordersPage = 1;
-        loadOrders().catch(error => showToast(error.message, "error"));
-      });
-      menu.addEventListener("keydown", event => {
-        if (event.key === "Enter" && event.target === searchInput) event.preventDefault();
-        if (event.key === "Escape") closeColumnFilter();
-      });
-    }
-
-    document.getElementById("theadRow").addEventListener("click", event => {
-      const button = event.target.closest("[data-filter-field]");
-      if (button) openColumnFilter(button.dataset.filterField, button);
-    });
-    document.addEventListener("click", event => {
-      if (!event.target.closest("#columnFilterMenu") && !event.target.closest("[data-filter-field]")) closeColumnFilter();
-    });
 
     function esc(s) {
       return String(s)
