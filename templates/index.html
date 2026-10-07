@@ -2283,13 +2283,13 @@ document.getElementById("searchInput").placeholder = t("search");
           badge.classList.add("show");
           list.innerHTML = data.items.map(x =>
             `<div class="notif-item">
-              <strong>${esc(x.order_number || "")}</strong> . ${Number(x.item_count || 0)} mã . ${esc(x.customer_name || "") || "—"} . ${Number(x.total_qty || 0)} hàng
+              <strong>${esc(x.order_number || "")}</strong> - ${esc(x.customer_name || "—")} : ${Number(x.item_count || 0)} mã . ${Number(x.total_qty || 0)} hàng
             </div>`
           ).join("");
           if (!silent) {
             const first = data.items && data.items.length ? data.items[0] : null;
             if (first) {
-              showToast(`BÁO ${first.order_number || ""} . ${Number(first.item_count || 0)} mã . ${first.customer_name || ""} . ${Number(first.total_qty || 0)} hàng`, "success");
+              showToast(`BÁO ${first.order_number || ""} - ${first.customer_name || "—"} : ${Number(first.item_count || 0)} mã . ${Number(first.total_qty || 0)} hàng`, "success");
             }
           }
         } else {
