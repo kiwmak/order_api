@@ -979,8 +979,8 @@
     </div>
     <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
       <div class="nav-tabs">
-        <button type="button" data-panel="dashboard" class="active" id="tab-dashboard">Dashboard</button>
-        <button type="button" data-panel="orders" id="tab-orders">Orders</button>
+        <button type="button" data-panel="dashboard" id="tab-dashboard">Dashboard</button>
+        <button type="button" data-panel="orders" class="active" id="tab-orders">Orders</button>
       </div>
       <div class="notif-wrap">
         <button type="button" class="notif-btn" id="notifBtn" title="Notifications">🔔<span class="notif-badge" id="notifBadge">0</span></button>
@@ -1008,7 +1008,7 @@
 
   <main>
     <!-- ========== DASHBOARD ========== -->
-    <div class="panel active" id="panel-dashboard">
+    <div class="panel" id="panel-dashboard">
       <div style="display:flex;justify-content:flex-end;margin-bottom:0.75rem;">
         <button type="button" class="btn btn-ghost" id="dashRefreshBtn"><span id="ui-refresh">Refresh</span></button>
       </div>
@@ -1060,7 +1060,7 @@
     </div>
 
     <!-- ========== ORDERS ========== -->
-    <div class="panel" id="panel-orders">
+    <div class="panel active" id="panel-orders">
     <!-- Upload (login required) -->
     <div class="card auth-only" id="uploadCard" style="display:none;">
       <h2>📥 <span id="ui-upload">Upload Excel File</span></h2>
@@ -2260,6 +2260,8 @@ document.getElementById("searchInput").placeholder = t("search");
 
     // Init
     applyLang();
+    document.querySelectorAll(".nav-tabs button").forEach(btn => btn.classList.toggle("active", btn.dataset.panel === "orders"));
+    document.querySelectorAll(".panel").forEach(p => p.classList.toggle("active", p.id === "panel-orders"));
     applyAuthUI();
     document.getElementById("loginBtn").textContent = t("login");
     document.getElementById("logoutBtn").textContent = t("logout");
