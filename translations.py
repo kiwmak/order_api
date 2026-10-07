@@ -434,9 +434,9 @@ UI_TEXT = {
         "vi": "Mới nhập gần đây"
     },
     "notify_new": {
-        "zh": "有 {n} 条新订单明细",
-        "en": "{n} new order line(s)",
-        "vi": "Có {n} dòng đơn hàng mới"
+        "zh": "有 {n} 个新单号",
+        "en": "{n} new order(s)",
+        "vi": "Có {n} đơn mới"
     },
     "notify_title": {
         "zh": "新订单通知",

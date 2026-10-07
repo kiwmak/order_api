@@ -2283,12 +2283,14 @@ document.getElementById("searchInput").placeholder = t("search");
           badge.classList.add("show");
           list.innerHTML = data.items.map(x =>
             `<div class="notif-item">
-              <strong>${esc(x.order_number || "")}</strong> · ${esc(x.item_code || "")}<br/>
-              <span style="color:var(--muted)">${esc(x.customer_name || "")} · qty ${x.order_qty ?? "—"}</span>
+              <strong>${esc(x.order_number || "")}</strong>
             </div>`
           ).join("");
           if (!silent) {
-            showToast(t("notify_new", data.new_count), "success");
+            const firstOrder = data.items && data.items.length ? (data.items[0].order_number || "") : "";
+            const customerName = data.items && data.items.length ? (data.items[0].customer_name || "") : "";
+            const totalQty = (data.items || []).reduce((sum, x) => sum + (Number(x.order_qty) || 0), 0);
+            showToast(`BÁO ${firstOrder} . ${data.new_count} mã . ${customerName} . ${totalQty} hàng`, "success");
           }
         } else {
           badge.classList.remove("show");
