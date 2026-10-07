@@ -1446,29 +1446,33 @@
         document.getElementById("deleteItemBtn").style.display = "none";
 
         const first = items[0] || {};
-        const itemsHtml = items.map(item => `
-          <div class="detail-item" style="grid-column:1 / -1;">
-            <label>Mã hàng</label>
-            <span class="val">${esc(item.item_code || "—")}</span>
-          </div>
-          <div class="detail-item">
-            <label>${lang === "vi" ? "Khách hàng" : lang === "zh" ? "客户" : "Customer"}</label>
-            <span class="val">${esc(item.customer_name || first.customer_name || "—")}</span>
-          </div>
-          <div class="detail-item">
-            <label>${lang === "vi" ? "Số lượng" : lang === "zh" ? "数量" : "Qty"}</label>
-            <span class="val">${Number(item.order_qty ?? 0).toLocaleString()}</span>
-          </div>
-          <div class="detail-item">
-            <label>${lang === "vi" ? "Mô tả" : lang === "zh" ? "描述" : "Description"}</label>
-            <span class="val">${esc(item.description || "—")}</span>
-          </div>
+        const rowsHtml = items.map(item => `
+          <tr>
+            <td>${esc(item.item_code || "—")}</td>
+            <td>${esc(item.customer_name || first.customer_name || "—")}</td>
+            <td>${Number(item.order_qty ?? 0).toLocaleString()}</td>
+            <td>${esc(item.description || "—")}</td>
+          </tr>
         `).join("");
 
         document.getElementById("detailGrid").innerHTML = `
           <div class="detail-section">
             <div class="detail-section-title"><span class="icon">📦</span> ${lang === "vi" ? "Chi tiết đơn hàng" : lang === "zh" ? "订单详情" : "Order details"}</div>
-            <div class="detail-grid" style="grid-template-columns:repeat(2,minmax(0,1fr));">${itemsHtml}</div>
+            <div style="overflow:auto; border:1px solid #e5e7eb; border-radius:12px; background:#fff;">
+              <table style="width:100%; border-collapse:collapse; font-size:0.9rem;">
+                <thead>
+                  <tr style="background:#f8fafc;">
+                    <th style="padding:0.7rem 0.75rem; text-align:left; border-bottom:1px solid #e5e7eb;">${lang === "vi" ? "Mã hàng" : lang === "zh" ? "货号" : "Item code"}</th>
+                    <th style="padding:0.7rem 0.75rem; text-align:left; border-bottom:1px solid #e5e7eb;">${lang === "vi" ? "Khách hàng" : lang === "zh" ? "客户" : "Customer"}</th>
+                    <th style="padding:0.7rem 0.75rem; text-align:left; border-bottom:1px solid #e5e7eb;">${lang === "vi" ? "Số lượng" : lang === "zh" ? "数量" : "Qty"}</th>
+                    <th style="padding:0.7rem 0.75rem; text-align:left; border-bottom:1px solid #e5e7eb;">${lang === "vi" ? "Mô tả" : lang === "zh" ? "描述" : "Description"}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${rowsHtml || `<tr><td colspan="4" style="padding:0.75rem; color:var(--muted);">${lang === "vi" ? "Không có dữ liệu" : lang === "zh" ? "暂无数据" : "No data"}</td></tr>`}
+                </tbody>
+              </table>
+            </div>
           </div>
         `;
         document.getElementById("modal").classList.add("open");
