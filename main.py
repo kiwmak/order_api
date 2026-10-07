@@ -19,7 +19,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, Res
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
+from sqlalchemy import func, desc, cast, String
 from pydantic import BaseModel
 
 from models import init_db, get_db, OrderItem, SessionLocal
@@ -452,19 +452,7 @@ async def import_excel(
 
 
 # ---------- API: List / Search ----------
-@app.get("/api/orders", response_model=OrderListResponse)
-def list_orders(
-    q: Optional[str] = Query(None, description="Search order_number / item_code / customer_name"),
-    order_number: Optional[str] = Query(None),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=500),
-    include_images: bool = Query(False, description="Include full product_image (heavy). Default false for list."),
-    db: Session = Depends(get_db),
-):
-    """Paginated order list. Default limit 100, max 500. Total count always returned."""
-    query = db.query(OrderItem)
-    if order_number:
-        query = query.filter(OrderItem.order_number == order_number)
+def _apply_order_search(query, q: Optional[str]):
     if q:
         like = f"%{q}%"
         query = query.filter(
@@ -474,8 +462,78 @@ def list_orders(
             | (OrderItem.customer_item_code.ilike(like))
             | (OrderItem.description.ilike(like))
         )
+    return query
+
+
+def _decode_column_filters(raw: Optional[str]) -> dict:
+    if not raw:
+        return {}
+    try:
+        filters = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(400, "Invalid filters JSON") from exc
+    if not isinstance(filters, dict):
+        raise HTTPException(400, "Filters must be an object")
+
+    valid_columns = set(OrderItem.__table__.columns.keys())
+    decoded = {}
+    for field, values in filters.items():
+        if field not in valid_columns or field == "id":
+            raise HTTPException(400, f"Invalid filter field: {field}")
+        if not isinstance(values, list):
+            raise HTTPException(400, f"Filter values for {field} must be a list")
+        decoded[field] = [str(value) for value in values]
+    return decoded
+
+
+def _apply_column_filters(query, filters: dict, exclude_field: Optional[str] = None):
+    for field, values in filters.items():
+        if field == exclude_field:
+            continue
+        column = getattr(OrderItem, field)
+        if not values:
+            query = query.filter(False)
+        else:
+            query = query.filter(func.coalesce(cast(column, String), "").in_(values))
+    return query
+
+
+@app.get("/api/orders/filter-values/{field}")
+def get_order_filter_values(
+    field: str,
+    q: Optional[str] = Query(None),
+    filters: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    if field not in OrderItem.__table__.columns or field == "id":
+        raise HTTPException(404, "Filter field not found")
+
+    query = _apply_order_search(db.query(OrderItem), q)
+    query = _apply_column_filters(query, _decode_column_filters(filters), exclude_field=field)
+    column = getattr(OrderItem, field)
+    rows = query.with_entities(column, func.count(OrderItem.id)).group_by(column).all()
+    items = [{"value": "" if value is None else str(value), "count": count} for value, count in rows]
+    return {"items": items}
+
+
+@app.get("/api/orders", response_model=OrderListResponse)
+def list_orders(
+    q: Optional[str] = Query(None, description="Search order_number / item_code / customer_name"),
+    order_number: Optional[str] = Query(None),
+    filters: Optional[str] = Query(None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    include_images: bool = Query(False, description="Include full product_image (heavy). Default false for list."),
+    db: Session = Depends(get_db),
+):
+    """Paginated order list. Default limit 100, max 500. Total count always returned."""
+    query = db.query(OrderItem)
+    if order_number:
+        query = query.filter(OrderItem.order_number == order_number)
+    query = _apply_order_search(query, q)
+    query = _apply_column_filters(query, _decode_column_filters(filters))
     total = query.count()
-    items = query.order_by(OrderItem.id.desc()).offset(skip).limit(limit).all()
+    items = query.order_by(OrderItem.order_number.desc(), OrderItem.id.desc()).offset(skip).limit(limit).all()
 
     # Lighten payload: base64 images are huge — mark presence only unless requested
     out = []
