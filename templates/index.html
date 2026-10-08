@@ -932,6 +932,24 @@
     }
     .notif-item:hover { background: var(--primary-soft); }
     .notif-empty { padding: 1.5rem; text-align: center; color: var(--muted); font-size: 0.85rem; }
+    @media (max-width: 600px) {
+      .notif-panel {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        right: auto;
+        transform: translate(-50%, -50%);
+        width: calc(100vw - 24px);
+        max-width: 340px;
+        max-height: calc(100vh - 24px);
+        max-height: calc(100dvh - 24px);
+      }
+      .notif-panel.open { animation: none; }
+      .notif-list {
+        max-height: calc(100vh - 96px);
+        max-height: calc(100dvh - 96px);
+      }
+    }
 
     #guestBanner {
       background: linear-gradient(90deg, #fef3c7, #fde68a) !important;
