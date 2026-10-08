@@ -1227,12 +1227,10 @@
         <div style="display:flex;gap:0.5rem;align-items:center;">
           <button type="button" class="btn btn-ghost auth-only" id="editBtn" style="display:none;font-size:0.85rem;">Edit</button>
           <button type="button" class="btn btn-danger auth-only" id="deleteItemBtn" style="display:none;font-size:0.85rem;padding:0.35rem 0.7rem;">Delete</button>
-          <button type="button" class="btn btn-primary" id="scaleTicketBtn" style="display:none;font-size:0.85rem;">Tạo phiếu cân giả định</button>
           <button class="btn btn-ghost" id="modalClose">✕</button>
         </div>
       </div>
       <div class="modal-body">
-        <div id="scaleTicket"></div>
         <div class="detail-grid" id="detailGrid"></div>
         <div id="editForm" style="display:none;"></div>
         <div id="editActions" style="display:none;margin-top:1rem;gap:0.5rem;" class="toolbar">
@@ -1793,8 +1791,6 @@ document.getElementById("searchInput").placeholder = t("search");
           return;
         }
         currentDetailId = null;
-        document.getElementById("scaleTicketBtn").style.display = "none";
-        document.getElementById("scaleTicket").innerHTML = "";
         document.getElementById("modalTitle").textContent = `${orderNumber} · ${items.length} mã`;
         document.getElementById("detailGrid").style.display = "";
         document.getElementById("detailGrid").classList.add("order-detail-view");
@@ -1858,8 +1854,6 @@ document.getElementById("searchInput").placeholder = t("search");
       if (!o) return;
       currentDetailId = id;
       editMode = false;
-      document.getElementById("scaleTicketBtn").style.display = "";
-      document.getElementById("scaleTicket").innerHTML = "";
       const code = o.item_code || "—";
       const ord = o.order_number || "—";
       document.getElementById("modalTitle").textContent = `${ord} · ${code}`;
@@ -1969,85 +1963,11 @@ document.getElementById("searchInput").placeholder = t("search");
       document.getElementById("modal").classList.add("open");
     }
 
-    function createScaleTicket() {
-      if (currentDetailId == null || editMode) return;
-      const label = (vi, en, zh) => lang === "zh" ? zh : lang === "en" ? en : vi;
-      const ticket = document.getElementById("scaleTicket");
-      const currentItem = orders.find(item => item.id === currentDetailId);
-      const unitWaxWeight = Number(currentItem?.unit_wax_weight_g);
-      const hasUnitWaxWeight = currentItem?.unit_wax_weight_g != null
-        && currentItem.unit_wax_weight_g !== ""
-        && Number.isFinite(unitWaxWeight);
-      const requestedCount = Number(ticket.querySelector("#scaleSpoutCount")?.value || 12);
-      const spoutCount = Number.isInteger(requestedCount) ? Math.min(100, Math.max(1, requestedCount)) : 12;
-      const rangeValue = (id, fallback) => Number(ticket.querySelector(`#${id}`)?.value ?? fallback);
-      const ranges = {
-        cup: [rangeValue("scaleCupMin", 53), rangeValue("scaleCupMax", 60)],
-        pour1: [rangeValue("scalePour1Min", 10), rangeValue("scalePour1Max", 12)],
-        pour2: [rangeValue("scalePour2Min", 10), rangeValue("scalePour2Max", 20)],
-      };
-      if (Object.values(ranges).some(([min, max]) => !Number.isInteger(min) || !Number.isInteger(max) || min > max)) {
-        showToast(label("Khoảng cân phải là số nguyên và giá trị từ phải nhỏ hơn hoặc bằng đến.", "Ranges must use whole numbers, with each minimum less than or equal to its maximum.", "称重范围必须为整数，且最小值必须小于或等于最大值。"), "error");
-        return;
-      }
-      const randomWeight = ([min, max]) => Math.floor(Math.random() * (max - min + 1)) + min;
-      const rows = Array.from({ length: spoutCount }, (_, index) => ({
-        spout: index + 1,
-        cup: randomWeight(ranges.cup),
-        pour1: randomWeight(ranges.pour1),
-        pour2: randomWeight(ranges.pour2),
-      }));
-      const waxWeights = rows.map(row => row.pour1 + row.pour2);
-      const averageWaxWeight = Math.round(waxWeights.reduce((sum, weight) => sum + weight, 0) / spoutCount);
-      const renderValueRow = (title, values, isWaxRow = false) => `
-        <tr>
-          <th scope="row" style="padding:0.65rem;text-align:left;min-width:210px;font-weight:500;">${title}</th>
-          ${values.map((value, index) => `<td style="padding:0.65rem;text-align:center;${isWaxRow && hasUnitWaxWeight && value < unitWaxWeight ? "color:#dc2626;font-weight:700;" : ""}" ${isWaxRow && hasUnitWaxWeight ? `title="${label("Trọng lượng sáp đơn vị", "Unit wax weight", "单位蜡重")}: ${unitWaxWeight}"` : ""}>${value}</td>`).join("")}
-        </tr>`;
-      const renderRows = () => `
-        ${renderValueRow(label("Trọng lượng cốc không", "Empty cup weight", "空杯重量"), rows.map(row => row.cup))}
-        ${renderValueRow(label("Rót lần đầu (bao gồm cốc và sáp)", "First pour (cup and wax)", "第一次灌装（含杯和蜡）"), rows.map(row => row.cup + row.pour1))}
-        ${renderValueRow(label("Rót lần cuối (bao gồm cốc và sáp)", "Final pour (cup and wax)", "最后一次灌装（含杯和蜡）"), rows.map(row => row.cup + row.pour1 + row.pour2))}
-        ${renderValueRow(label("Trọng lượng sáp nến", "Candle wax weight", "蜡烛蜡重"), waxWeights, true)}
-        <tr>
-          <th scope="row" style="padding:0.65rem;text-align:left;font-weight:500;">${label("Trọng lượng trung bình", "Average weight", "平均重量")}</th>
-          <td colspan="${spoutCount}" style="padding:0.65rem;text-align:center;font-weight:700;">${averageWaxWeight}</td>
-        </tr>`;
-      ticket.innerHTML = `
-        <section class="detail-section" style="margin-bottom:1.25rem;">
-          <div class="detail-section-title"><span class="icon">⚖️</span> ${label("Phiếu cân giả định", "Hypothetical weighing ticket", "模拟称重单")}</div>
-          <div style="display:flex;flex-wrap:wrap;align-items:end;gap:0.65rem 1rem;margin-bottom:0.85rem;">
-            <label style="display:inline-flex;align-items:center;gap:0.5rem;margin:0;font-size:0.85rem;">${label("Số vòi rót", "Number of spouts", "灌装头数量")} <input id="scaleSpoutCount" class="search-box" type="number" min="1" max="100" step="1" value="${spoutCount}" style="width:80px;padding:0.4rem;" /></label>
-            ${[
-              ["scaleCup", label("Vỏ cốc", "Cup tare", "杯重"), ranges.cup],
-              ["scalePour1", label("Rót lần 1", "Pour 1", "第一次灌装"), ranges.pour1],
-              ["scalePour2", label("Rót lần 2", "Pour 2", "第二次灌装"), ranges.pour2],
-            ].map(([id, title, range]) => `<label style="display:inline-flex;align-items:center;gap:0.3rem;margin:0;font-size:0.85rem;">${title}<input id="${id}Min" class="search-box" type="number" step="1" value="${range[0]}" aria-label="${title} ${label("từ", "minimum", "最小值")}" style="width:75px;padding:0.4rem;" /><span>–</span><input id="${id}Max" class="search-box" type="number" step="1" value="${range[1]}" aria-label="${title} ${label("đến", "maximum", "最大值")}" style="width:75px;padding:0.4rem;" /></label>`).join("")}
-            <button type="button" class="btn btn-primary" id="scaleRandomizeBtn" style="font-size:0.85rem;">${label("Tạo ngẫu nhiên", "Generate random", "随机生成")}</button>
-          </div>
-          <div style="overflow:auto;border:1px solid #e2e8f0;border-radius:8px;background:#fff;">
-            <table style="width:100%;border-collapse:collapse;font-size:0.9rem;min-width:${260 + spoutCount * 56}px;">
-              <thead><tr style="background:#f8fafc;">
-                <th scope="col" style="padding:0.65rem;text-align:left;min-width:210px;">${label("(序号) STT", "No.", "序号")}</th>
-                ${rows.map(row => `<th scope="col" style="padding:0.65rem;text-align:center;min-width:56px;">${row.spout}</th>`).join("")}
-              </tr></thead>
-              <tbody>${renderRows()}</tbody>
-            </table>
-          </div>
-          <div style="margin-top:0.45rem;color:var(--muted);font-size:0.8rem;">${label("Các số cân được tạo ngẫu nhiên theo khoảng đã nhập. Phiếu chỉ dùng để giả định, không lưu vào đơn hàng.", "Readings are randomized within the entered ranges. This simulated ticket is not saved to the order.", "称重值按输入范围随机生成。此模拟称重单不会保存到订单。")}</div>
-        </section>`;
-      ticket.querySelector("#scaleRandomizeBtn").addEventListener("click", createScaleTicket);
-    }
-
-    document.getElementById("scaleTicketBtn").addEventListener("click", createScaleTicket);
-
     function startEdit() {
       if (!isLoggedIn() || currentDetailId == null) return;
       const o = orders.find(x => x.id === currentDetailId);
       if (!o) return;
       editMode = true;
-      document.getElementById("scaleTicketBtn").style.display = "none";
-      document.getElementById("scaleTicket").innerHTML = "";
       document.getElementById("detailGrid").style.display = "none";
       const form = document.getElementById("editForm");
       form.style.display = "grid";
