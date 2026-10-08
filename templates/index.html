@@ -935,19 +935,20 @@
     @media (max-width: 600px) {
       .notif-panel {
         position: fixed;
-        top: 50%;
+        top: var(--notif-top, 72px);
         left: 50%;
         right: auto;
-        transform: translate(-50%, -50%);
+        transform: translateX(-50%);
         width: calc(100vw - 24px);
         max-width: 340px;
         max-height: calc(100vh - 24px);
-        max-height: calc(100dvh - 24px);
+        max-height: min(400px, calc(100vh - var(--notif-top, 72px) - 16px));
+        max-height: min(400px, calc(100dvh - var(--notif-top, 72px) - 16px));
       }
       .notif-panel.open { animation: none; }
       .notif-list {
-        max-height: calc(100vh - 96px);
-        max-height: calc(100dvh - 96px);
+        max-height: min(320px, calc(100vh - var(--notif-top, 72px) - 80px));
+        max-height: min(320px, calc(100dvh - var(--notif-top, 72px) - 80px));
       }
     }
 
@@ -2399,10 +2400,31 @@ document.getElementById("searchInput").placeholder = t("search");
       }
     }
 
-    document.getElementById("notifBtn").addEventListener("click", (e) => {
+    const notifBtn = document.getElementById("notifBtn");
+    const notifPanel = document.getElementById("notifPanel");
+    function positionNotifPanel() {
+      if (window.matchMedia("(max-width: 600px)").matches) {
+        const buttonRect = notifBtn.getBoundingClientRect();
+        notifPanel.style.setProperty("--notif-top", `${Math.round(buttonRect.bottom + 8)}px`);
+      } else {
+        notifPanel.style.removeProperty("--notif-top");
+      }
+    }
+    notifBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      document.getElementById("notifPanel").classList.toggle("open");
+      if (notifPanel.classList.contains("open")) {
+        notifPanel.classList.remove("open");
+        return;
+      }
+      positionNotifPanel();
+      notifPanel.classList.add("open");
     });
+    window.addEventListener("resize", () => {
+      if (notifPanel.classList.contains("open")) positionNotifPanel();
+    });
+    window.addEventListener("scroll", () => {
+      if (notifPanel.classList.contains("open")) positionNotifPanel();
+    }, true);
     document.getElementById("markReadBtn").addEventListener("click", (e) => {
       e.stopPropagation();
       if (window._serverMaxId) setSeenMaxId(window._serverMaxId);
