@@ -346,6 +346,7 @@
       border: 1px solid rgba(255,255,255,0.5);
       animation: slideUp 0.25s cubic-bezier(0.34, 1.2, 0.64, 1);
     }
+    #modal > .modal { max-width: 1200px; }
     @keyframes slideUp {
       from { opacity: 0; transform: translateY(12px) scale(0.98); }
       to { opacity: 1; transform: translateY(0) scale(1); }
@@ -384,7 +385,14 @@
       background: white;
       box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
     }
-    .detail-grid.order-detail-view { grid-template-columns: minmax(0, 1fr); }
+    #detailGrid {
+      display: block;
+      border: 0;
+      border-radius: 0;
+      overflow: visible;
+      background: transparent;
+      box-shadow: none;
+    }
     @media (max-width: 600px) {
       .detail-grid { grid-template-columns: 1fr; }
       header { padding: 0.9rem 1rem; }
@@ -703,16 +711,6 @@
       object-fit: contain;
       background: #f8fafc;
     }
-    .order-product-image {
-      display: block;
-      width: 72px;
-      height: 72px;
-      object-fit: contain;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: #fff;
-      cursor: zoom-in;
-    }
     .detail-item.full .detail-img {
       margin: 0.35rem 0;
     }
@@ -937,14 +935,20 @@
     @media (max-width: 600px) {
       .notif-panel {
         position: fixed;
-        top: var(--notif-panel-top, 8rem);
-        right: 0.75rem;
-        left: 0.75rem;
-        width: auto;
-        max-height: calc(100vh - var(--notif-panel-top, 8rem) - 0.75rem);
+        top: var(--notif-top, 72px);
+        left: 50%;
+        right: auto;
+        transform: translateX(-50%);
+        width: calc(100vw - 24px);
+        max-width: 340px;
+        max-height: calc(100vh - 24px);
+        max-height: min(400px, calc(100vh - var(--notif-top, 72px) - 16px));
+        max-height: min(400px, calc(100dvh - var(--notif-top, 72px) - 16px));
       }
+      .notif-panel.open { animation: none; }
       .notif-list {
-        max-height: calc(100vh - var(--notif-panel-top, 8rem) - 5rem);
+        max-height: min(320px, calc(100vh - var(--notif-top, 72px) - 80px));
+        max-height: min(320px, calc(100dvh - var(--notif-top, 72px) - 80px));
       }
     }
 
@@ -1793,7 +1797,6 @@ document.getElementById("searchInput").placeholder = t("search");
         currentDetailId = null;
         document.getElementById("modalTitle").textContent = `${orderNumber} · ${items.length} mã`;
         document.getElementById("detailGrid").style.display = "";
-        document.getElementById("detailGrid").classList.add("order-detail-view");
         document.getElementById("editForm").style.display = "none";
         document.getElementById("editActions").style.display = "none";
         document.getElementById("editBtn").style.display = "none";
@@ -1802,8 +1805,12 @@ document.getElementById("searchInput").placeholder = t("search");
         const first = items[0] || {};
         const rowsHtml = items.map(item => `
           <tr>
+            <td style="padding:0.45rem 0.75rem; border-bottom:1px solid #e5e7eb; text-align:center;">
+              ${item.product_image
+                ? `<img src="${esc(item.product_image)}" alt="${esc(item.item_code || "Product")}" onclick="openLightbox(this.src)" style="width:56px;height:56px;object-fit:contain;border-radius:6px;cursor:zoom-in;background:#f8fafc;" />`
+                : `<span style="color:var(--muted);">—</span>`}
+            </td>
             <td>${esc(item.item_code || "—")}</td>
-            <td>${item.product_image ? `<img class="order-product-image" src="${esc(item.product_image)}" alt="${esc(item.item_code || "Product")}" loading="lazy" onclick="openLightbox(this.src)" />` : `<span style="color:var(--muted);">—</span>`}</td>
             <td>${esc(item.customer_name || first.customer_name || "—")}</td>
             <td>${Number(item.order_qty ?? 0).toLocaleString()}</td>
             <td>${esc(item.description || "—")}</td>
@@ -1817,8 +1824,8 @@ document.getElementById("searchInput").placeholder = t("search");
               <table style="width:100%; border-collapse:collapse; font-size:0.9rem;">
                 <thead>
                   <tr style="background:#f8fafc;">
+                    <th style="padding:0.7rem 0.75rem; text-align:center; border-bottom:1px solid #e5e7eb;">${lang === "vi" ? "Hình ảnh" : lang === "zh" ? "图片" : "Image"}</th>
                     <th style="padding:0.7rem 0.75rem; text-align:left; border-bottom:1px solid #e5e7eb;">${lang === "vi" ? "Mã hàng" : lang === "zh" ? "货号" : "Item code"}</th>
-                    <th style="padding:0.7rem 0.75rem; text-align:left; border-bottom:1px solid #e5e7eb;">${lang === "vi" ? "Hình ảnh" : lang === "zh" ? "图片" : "Image"}</th>
                     <th style="padding:0.7rem 0.75rem; text-align:left; border-bottom:1px solid #e5e7eb;">${lang === "vi" ? "Khách hàng" : lang === "zh" ? "客户" : "Customer"}</th>
                     <th style="padding:0.7rem 0.75rem; text-align:left; border-bottom:1px solid #e5e7eb;">${lang === "vi" ? "Số lượng" : lang === "zh" ? "数量" : "Qty"}</th>
                     <th style="padding:0.7rem 0.75rem; text-align:left; border-bottom:1px solid #e5e7eb;">${lang === "vi" ? "Mô tả" : lang === "zh" ? "描述" : "Description"}</th>
@@ -1840,7 +1847,6 @@ document.getElementById("searchInput").placeholder = t("search");
 
     async function showDetail(id) {
       let o = orders.find(x => x.id === id);
-      document.getElementById("detailGrid").classList.remove("order-detail-view");
       // always fetch full record (list may omit base64 images)
       try {
         const res = await fetch("/api/orders/" + id);
@@ -2394,15 +2400,31 @@ document.getElementById("searchInput").placeholder = t("search");
       }
     }
 
-    document.getElementById("notifBtn").addEventListener("click", (e) => {
-      e.stopPropagation();
-      const panel = document.getElementById("notifPanel");
-      if (!panel.classList.contains("open") && window.matchMedia("(max-width: 600px)").matches) {
-        const buttonBottom = e.currentTarget.getBoundingClientRect().bottom;
-        panel.style.setProperty("--notif-panel-top", `${buttonBottom + 10}px`);
+    const notifBtn = document.getElementById("notifBtn");
+    const notifPanel = document.getElementById("notifPanel");
+    function positionNotifPanel() {
+      if (window.matchMedia("(max-width: 600px)").matches) {
+        const buttonRect = notifBtn.getBoundingClientRect();
+        notifPanel.style.setProperty("--notif-top", `${Math.round(buttonRect.bottom + 8)}px`);
+      } else {
+        notifPanel.style.removeProperty("--notif-top");
       }
-      panel.classList.toggle("open");
+    }
+    notifBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (notifPanel.classList.contains("open")) {
+        notifPanel.classList.remove("open");
+        return;
+      }
+      positionNotifPanel();
+      notifPanel.classList.add("open");
     });
+    window.addEventListener("resize", () => {
+      if (notifPanel.classList.contains("open")) positionNotifPanel();
+    });
+    window.addEventListener("scroll", () => {
+      if (notifPanel.classList.contains("open")) positionNotifPanel();
+    }, true);
     document.getElementById("markReadBtn").addEventListener("click", (e) => {
       e.stopPropagation();
       if (window._serverMaxId) setSeenMaxId(window._serverMaxId);
