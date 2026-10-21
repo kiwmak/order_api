@@ -71,8 +71,11 @@ CREATE TABLE IF NOT EXISTS scale_tickets (
     readings_json TEXT NOT NULL,
     average_wax_weight_g DOUBLE PRECISION NOT NULL,
     notes TEXT,
+    created_by VARCHAR(100),
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT (NOW() AT TIME ZONE 'utc') NOT NULL
 );
+
+ALTER TABLE scale_tickets ADD COLUMN IF NOT EXISTS created_by VARCHAR(100);
 
 CREATE INDEX IF NOT EXISTS ix_scale_tickets_item_code ON scale_tickets (item_code);
 

@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, Text, DateTime, Date, Boolean, CheckConstraint
+from sqlalchemy import create_engine, Column, Integer, String, Float, Text, DateTime, Date, Boolean, CheckConstraint, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime
 import os
@@ -110,6 +110,7 @@ class ScaleTicket(Base):
     readings_json = Column(Text, nullable=False)
     average_wax_weight_g = Column(Float, nullable=False)
     notes = Column(Text, nullable=True)
+    created_by = Column(String(100), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
@@ -130,11 +131,14 @@ class UserAccount(Base):
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    with engine.begin() as conn:
+        columns = {column["name"] for column in inspect(conn).get_columns("scale_tickets")}
+        if "created_by" not in columns:
+            conn.execute(text("ALTER TABLE scale_tickets ADD COLUMN created_by VARCHAR(100)"))
     # Ensure product_image can hold base64 data-URIs (Supabase may still be VARCHAR(500))
     try:
         url = str(engine.url)
         if "sqlite" not in url:
-            from sqlalchemy import text
             with engine.begin() as conn:
                 conn.execute(text(
                     "ALTER TABLE order_items ALTER COLUMN product_image TYPE TEXT"

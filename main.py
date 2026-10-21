@@ -12,7 +12,7 @@ import math
 import shutil
 import tempfile
 from typing import List, Optional, Any, Literal
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from collections import defaultdict
 
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Query, Request
@@ -259,6 +259,7 @@ class ScaleTicketOut(BaseModel):
     average_wax_weight_g: Optional[int] = None
     notes: Optional[str] = None
     created_at: datetime
+    created_by: Optional[str] = None
     mode: str = "hypothetical"
 
 
@@ -279,7 +280,27 @@ class ScaleTicketUIOut(BaseModel):
     average_wax_weight_g: Optional[int] = None
     notes: Optional[str] = None
     created_at: datetime
+    created_by: Optional[str] = None
     mode: str
+
+
+VIETNAM_TZ = timezone(timedelta(hours=7))
+
+
+def _vietnam_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(VIETNAM_TZ)
+
+
+def _vietnam_datetime_text(value: datetime) -> str:
+    return _vietnam_datetime(value).strftime("%d/%m/%Y %H:%M:%S")
+
+
+def _database_datetime(value: datetime) -> datetime:
+    if value.tzinfo is not None:
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value
 
 
 def _validate_scale_ticket(body: ScaleTicketCreate) -> int:
@@ -331,7 +352,8 @@ def _scale_ticket_response(ticket: ScaleTicket) -> ScaleTicketOut:
         ],
         average_wax_weight_g=_scale_ticket_average(ticket, readings_data, mode),
         notes=ticket.notes,
-        created_at=ticket.created_at,
+        created_at=_vietnam_datetime(ticket.created_at),
+        created_by=ticket.created_by,
         mode=mode,
     )
 
@@ -381,7 +403,8 @@ def _scale_ticket_ui_response(ticket: ScaleTicket) -> ScaleTicketUIOut:
         readings=normalized_readings,
         average_wax_weight_g=_scale_ticket_average(ticket, readings, mode),
         notes=ticket.notes,
-        created_at=ticket.created_at,
+        created_at=_vietnam_datetime(ticket.created_at),
+        created_by=ticket.created_by,
         mode=mode,
     )
 
@@ -923,7 +946,12 @@ def _validate_scale_ticket_ui(body: ScaleTicketUIInput) -> int:
     return math.floor(sum(wax_weights) / len(wax_weights) + 0.5) if wax_weights else 0
 
 
-def _save_scale_ticket_ui(item: OrderItem, body: ScaleTicketUIInput, ticket: Optional[ScaleTicket] = None):
+def _save_scale_ticket_ui(
+    item: OrderItem,
+    body: ScaleTicketUIInput,
+    ticket: Optional[ScaleTicket] = None,
+    created_by: Optional[str] = None,
+):
     average_weight = _validate_scale_ticket_ui(body)
     if ticket is None:
         ticket = ScaleTicket(
@@ -931,6 +959,7 @@ def _save_scale_ticket_ui(item: OrderItem, body: ScaleTicketUIInput, ticket: Opt
             order_number=item.order_number,
             customer_name=item.customer_name,
             description=item.description,
+            created_by=created_by or "Khách",
         )
     ticket.spout_count = body.spout_count
     ticket.cup_min_g = body.cup_min
@@ -986,7 +1015,7 @@ def create_order_scale_ticket(
     item = db.query(OrderItem).filter(OrderItem.id == item_id).first()
     if not item:
         raise HTTPException(404, "Order item not found")
-    ticket = _save_scale_ticket_ui(item, body)
+    ticket = _save_scale_ticket_ui(item, body, created_by=user)
     db.add(ticket)
     db.commit()
     db.refresh(ticket)
@@ -1027,6 +1056,7 @@ def update_order_scale_ticket(
 def export_order_scale_ticket(
     item_id: int,
     body: ScaleTicketUIInput,
+    ticket_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     user: str = Depends(require_roles("admin", "staff", "viewer")),
 ):
@@ -1036,6 +1066,23 @@ def export_order_scale_ticket(
     item = db.query(OrderItem).filter(OrderItem.id == item_id).first()
     if not item:
         raise HTTPException(404, "Order item not found")
+    saved_ticket = None
+    if ticket_id is not None:
+        saved_ticket = (
+            db.query(ScaleTicket)
+            .filter(
+                ScaleTicket.id == ticket_id,
+                ScaleTicket.item_code == item.item_code,
+                ScaleTicket.order_number == item.order_number,
+            )
+            .first()
+        )
+        if not saved_ticket:
+            raise HTTPException(404, "Scale ticket not found")
+        if _scale_ticket_readings(saved_ticket)[1] != "actual":
+            raise HTTPException(400, "Only actual weighing tickets can be exported")
+    export_created_at = saved_ticket.created_at if saved_ticket else datetime.utcnow()
+    export_created_by = saved_ticket.created_by if saved_ticket else user
 
     workbook = Workbook()
     sheet = workbook.active
@@ -1046,6 +1093,8 @@ def export_order_scale_ticket(
     sheet.append(["Mã hàng", item.item_code or ""])
     sheet.append(["Đơn hàng", item.order_number or ""])
     sheet.append(["Trọng lượng mã hàng (g)", target_weight if has_target_weight else ""])
+    sheet.append(["Thời gian tạo", _vietnam_datetime_text(export_created_at)])
+    sheet.append(["Người tạo", export_created_by or "—"])
     sheet.append([])
     headers = [
         "STT / Vòi",
@@ -1190,6 +1239,7 @@ def create_scale_ticket(
         ),
         average_wax_weight_g=average_weight,
         notes=body.notes,
+        created_by=user or "Khách",
     )
     db.add(ticket)
     db.commit()
@@ -1237,7 +1287,8 @@ def _scale_ticket_backup(ticket: ScaleTicket) -> dict:
         "average_wax_weight_g": _scale_ticket_average(ticket, readings, mode),
         "mode": mode,
         "notes": ticket.notes,
-        "created_at": ticket.created_at.isoformat() if ticket.created_at else None,
+        "created_at": _vietnam_datetime(ticket.created_at).isoformat() if ticket.created_at else None,
+        "created_by": ticket.created_by,
     }
 
 
@@ -1529,7 +1580,9 @@ async def restore_database(
                 ),
             ticket.customer_name = row.get("customer_name") or item.customer_name
             ticket.description = row.get("description") or item.description
-            ticket.created_at = _dt(row.get("created_at")) or datetime.utcnow()
+            restored_created_at = _dt(row.get("created_at"))
+            ticket.created_at = _database_datetime(restored_created_at) if restored_created_at else datetime.utcnow()
+            ticket.created_by = row.get("created_by")
             db.add(ticket)
             restored_tickets += 1
         except (HTTPException, ValidationError, ValueError, TypeError, KeyError):
@@ -1793,4 +1846,4 @@ def notifications(
 # ---------- Run ----------
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=True)

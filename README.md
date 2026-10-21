@@ -8,6 +8,7 @@ Hệ thống quản lý đơn hàng nến (candle orders) — hỗ trợ import 
 - Lưu trữ SQLite
 - Giao diện web: upload, tìm kiếm, xem chi tiết
 - Tạo, lưu và xem lại phiếu cân giả định theo mã hàng (vỏ cốc, rót lần 1/lần 2, ghi chú)
+- Phiếu cân hiển thị thời gian Việt Nam (UTC+7) và người tạo; thông tin này cũng có trong Excel
 - Quản lý tài khoản và phân quyền Admin / Nhân viên / Chỉ xem
 - Chuyển ngôn ngữ: VI / EN / 中文
 - REST API đầy đủ (Swagger tại `/docs`)
@@ -22,7 +23,7 @@ Tài khoản admin hiện có trong `data/credentials.json` được tự độn
 | Nhân viên | Xem dữ liệu, lưu/sửa phiếu cân thực tế và xuất Excel phiếu cân |
 | Chỉ xem | Xem dữ liệu và xuất Excel phiếu cân |
 
-Lưu phiếu cân giả định vẫn không cần đăng nhập. Tài khoản admin cần chạy SQL trong `supabase_schema.sql` nếu triển khai trên Supabase với quyền database không cho phép ứng dụng tự tạo bảng.
+Lưu phiếu cân giả định vẫn không cần đăng nhập; phiếu tạo ẩn danh được ghi người tạo là **Khách**. Ứng dụng tự thêm cột `created_by` khi khởi động nếu bảng phiếu cân đã tồn tại. Nếu database không cho ứng dụng thay đổi schema, chạy phần schema trong `supabase_schema.sql` trước khi khởi động.
 
 ## Chạy nhanh
 

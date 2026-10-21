@@ -2564,9 +2564,16 @@ document.getElementById("searchInput").placeholder = t("search");
               <td style="padding:0.45rem;text-align:center;">${row.pour2 ?? "—"}</td>
               <td style="padding:0.45rem;text-align:center;">${isActual ? row.cup != null && row.pour2 != null ? row.pour2 - row.cup : "—" : row.pour1 + row.pour2}</td>
             </tr>`).join("");
-          const created = ticket.created_at ? new Date(ticket.created_at).toLocaleString() : "—";
+          const created = ticket.created_at
+            ? new Intl.DateTimeFormat(lang === "zh" ? "zh-CN" : lang === "en" ? "en-US" : "vi-VN", {
+              timeZone: "Asia/Ho_Chi_Minh",
+              dateStyle: "short",
+              timeStyle: "medium",
+            }).format(new Date(ticket.created_at))
+            : "—";
           return `<tr>
             <td style="padding:0.65rem;">${esc(created)}</td>
+            <td style="padding:0.65rem;">${esc(ticket.created_by || "—")}</td>
             <td style="padding:0.65rem;">${isActual ? label("Thực tế", "Actual", "实际") : label("Giả định", "Hypothetical", "模拟")}</td>
             <td style="padding:0.65rem;">${ticket.cup_min == null ? "—" : `${ticket.cup_min}–${ticket.cup_max} g`}</td>
             <td style="padding:0.65rem;">${ticket.pour1_min == null ? "—" : `${ticket.pour1_min}–${ticket.pour1_max} g`}</td>
@@ -2589,9 +2596,10 @@ document.getElementById("searchInput").placeholder = t("search");
         history.innerHTML = `<section class="detail-section">
           <div class="detail-section-title"><span class="icon">⚖️</span> ${label("Bảng cân mã hàng", "Item weighing table", "货号称重表")} · ${esc(code)}</div>
           <div style="overflow:auto;border:1px solid #e2e8f0;border-radius:8px;background:#fff;">
-            <table style="width:100%;border-collapse:collapse;font-size:0.85rem;min-width:840px;">
+            <table style="width:100%;border-collapse:collapse;font-size:0.85rem;min-width:920px;">
               <thead><tr style="background:#f8fafc;">
                 <th style="padding:0.65rem;text-align:left;">${label("Thời gian", "Created", "时间")}</th>
+                <th style="padding:0.65rem;text-align:left;">${label("Người tạo", "Created by", "创建人")}</th>
                 <th style="padding:0.65rem;text-align:left;">${label("Loại phiếu", "Ticket type", "单据类型")}</th>
                 <th style="padding:0.65rem;text-align:left;">${label("Vỏ cốc", "Cup tare", "杯重")} (${label("từ–đến", "range", "范围")})</th>
                 <th style="padding:0.65rem;text-align:left;">${label("Rót lần 1", "Pour 1", "灌装1")} (${label("từ–đến", "range", "范围")})</th>
@@ -2664,7 +2672,8 @@ document.getElementById("searchInput").placeholder = t("search");
       const item = orders.find(order => order.id === currentDetailId);
       button.disabled = true;
       try {
-        const res = await authFetch(`/api/orders/${currentDetailId}/scale-tickets/export`, {
+        const exportUrl = `/api/orders/${currentDetailId}/scale-tickets/export${currentScaleTicketId == null ? "" : `?ticket_id=${encodeURIComponent(currentScaleTicketId)}`}`;
+        const res = await authFetch(exportUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(currentScaleTicket),

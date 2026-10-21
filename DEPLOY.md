@@ -15,7 +15,7 @@ postgresql://postgres.XXXXXXXX:[YOUR-PASSWORD]@aws-0-ap-southeast-1.pooler.supab
 
 > Nếu mật khẩu có ký tự đặc biệt (`@ # %`), cần **URL-encode**.
 
-App sẽ tự tạo bảng `order_items` khi khởi động (`init_db()`).
+App sẽ tự tạo bảng `order_items` khi khởi động (`init_db()`) và thêm cột `created_by` vào bảng `scale_tickets` hiện có. Nếu tài khoản database không có quyền thay đổi schema, hãy chạy `supabase_schema.sql` trước khi deploy.
 
 ---
 
