@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, Text, DateTime, Date
+from sqlalchemy import create_engine, Column, Integer, String, Float, Text, DateTime, Date, Boolean, CheckConstraint
 from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime
 import os
@@ -110,6 +110,21 @@ class ScaleTicket(Base):
     readings_json = Column(Text, nullable=False)
     average_wax_weight_g = Column(Float, nullable=False)
     notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class UserAccount(Base):
+    __tablename__ = "user_accounts"
+    __table_args__ = (
+        CheckConstraint("role IN ('admin', 'staff', 'viewer')", name="ck_user_accounts_role"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(100), unique=True, nullable=False, index=True)
+    salt = Column(String(64), nullable=False)
+    password_hash = Column(String(128), nullable=False)
+    role = Column(String(20), nullable=False, default="viewer")
+    is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 

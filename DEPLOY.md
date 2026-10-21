@@ -63,7 +63,7 @@ Sau khi xanh, URL dạng: `https://your-app-xxxxx.koyeb.app`
 - Đăng nhập bằng `ORDER_ADMIN_USER` / `ORDER_ADMIN_PASS`
 - Import Excel thử
 
-Trong Supabase → **Table Editor** sẽ thấy bảng `order_items`.
+Trong Supabase → **Table Editor** sẽ thấy các bảng `order_items`, `scale_tickets` và `user_accounts`.
 
 ---
 
@@ -74,9 +74,8 @@ Disk trên Koyeb **không bền** (mất khi redeploy). Ảnh trong `static/uplo
 Dữ liệu đơn hàng vẫn an toàn trên **Supabase Postgres**.  
 Nếu cần ảnh bền vững: cấu hình Supabase Storage (bước mở rộng sau).
 
-### Đổi mật khẩu
-Sau khi đổi MK trên web, file `data/credentials.json` nằm trên disk container → có thể mất khi redeploy.  
-Nên đặt `ORDER_ADMIN_PASS` mạnh trên Koyeb, hoặc sau này lưu hash vào Postgres.
+### Tài khoản và đổi mật khẩu
+Tài khoản cùng mật khẩu đã băm được lưu trong database (`user_accounts`), nên không mất khi redeploy nếu vẫn dùng cùng Supabase Postgres. Tài khoản admin cũ được nhập từ `data/credentials.json` khi khởi tạo lần đầu. Nếu Supabase không cho ứng dụng tạo bảng, hãy chạy phần schema trong `supabase_schema.sql` trước khi khởi động app.
 
 ### Local vẫn dùng SQLite
 Không set `DATABASE_URL` → app dùng `data/orders.db` như cũ.

@@ -1093,6 +1093,7 @@
       <span id="userLabel" style="font-size:0.85rem;opacity:.9;"></span>
       <button type="button" class="btn" id="loginBtn" style="background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.35);">Login</button>
       <button type="button" class="btn auth-only" id="changePassBtn" style="display:none;background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.35);">Đổi MK</button>
+      <button type="button" class="btn auth-only role-only" data-roles="admin" id="userManagerBtn" style="display:none;background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.35);">Quản lý user</button>
       <button type="button" class="btn" id="logoutBtn" style="display:none;background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.35);">Logout</button>
       <a class="link-api" href="/docs" target="_blank" id="ui-api-docs">API Docs ↗</a>
       <div class="lang-switch">
@@ -1160,7 +1161,7 @@
     <!-- ========== ORDERS ========== -->
     <div class="panel active" id="panel-orders">
     <!-- Upload (login required) -->
-    <div class="card auth-only" id="uploadCard" style="display:none;">
+    <div class="card auth-only role-only" data-roles="admin" id="uploadCard" style="display:none;">
       <h2>📥 <span id="ui-upload">Upload Excel File</span></h2>
       <div class="upload-zone" id="dropzone">
         <p style="margin-bottom:0.75rem;color:var(--muted);font-size:0.9rem;">
@@ -1186,14 +1187,14 @@
         <button type="button" class="btn btn-ghost" id="exportPoSkuBtn">
           Xuất Excel A5
         </button>
-        <button type="button" class="btn btn-ghost auth-only" id="backupBtn" style="display:none;">
+        <button type="button" class="btn btn-ghost auth-only role-only" data-roles="admin" id="backupBtn" style="display:none;">
           <span id="ui-backup">Backup</span>
         </button>
-        <button type="button" class="btn btn-ghost auth-only" id="restoreBtn" style="display:none;">
+        <button type="button" class="btn btn-ghost auth-only role-only" data-roles="admin" id="restoreBtn" style="display:none;">
           <span id="ui-restore">Restore</span>
         </button>
         <input type="file" id="restoreFileInput" accept=".json,application/json" style="display:none;" />
-        <button class="btn btn-danger auth-only" id="clearBtn" style="display:none;">
+        <button class="btn btn-danger auth-only role-only" data-roles="admin" id="clearBtn" style="display:none;">
           <span id="ui-delete-all">Clear All Data</span>
         </button>
       </div>
@@ -1237,10 +1238,10 @@
       <div class="modal-header">
         <h3 id="modalTitle">Detail</h3>
         <div style="display:flex;gap:0.5rem;align-items:center;">
-          <button type="button" class="btn btn-ghost auth-only" id="editBtn" style="display:none;font-size:0.85rem;">Edit</button>
-          <button type="button" class="btn btn-danger auth-only" id="deleteItemBtn" style="display:none;font-size:0.85rem;padding:0.35rem 0.7rem;">Delete</button>
+          <button type="button" class="btn btn-ghost auth-only role-only" data-roles="admin" id="editBtn" style="display:none;font-size:0.85rem;">Edit</button>
+          <button type="button" class="btn btn-danger auth-only role-only" data-roles="admin" id="deleteItemBtn" style="display:none;font-size:0.85rem;padding:0.35rem 0.7rem;">Delete</button>
           <button type="button" class="btn btn-primary" id="scaleTicketBtn" style="display:none;font-size:0.85rem;">Tạo phiếu cân giả định</button>
-          <button type="button" class="btn btn-primary" id="realScaleTicketBtn" style="display:none;font-size:0.85rem;">Tạo phiếu cân thật</button>
+          <button type="button" class="btn btn-primary auth-only role-only" data-roles="admin,staff,viewer" id="realScaleTicketBtn" style="display:none;font-size:0.85rem;">Tạo phiếu cân thật</button>
           <button class="btn btn-ghost" id="modalClose">✕</button>
         </div>
       </div>
@@ -1304,6 +1305,45 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="userManagerModal">
+    <div class="modal" style="max-width:760px;">
+      <div class="modal-header">
+        <h3>Quản lý người dùng</h3>
+        <button class="btn btn-ghost" id="userManagerClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="createUserForm" style="display:flex;flex-wrap:wrap;align-items:end;gap:0.65rem;margin-bottom:1rem;">
+          <label style="flex:1;min-width:130px;font-size:0.8rem;">Tên đăng nhập
+            <input id="newUsername" class="search-box" required maxlength="100" autocomplete="off" style="width:100%;" />
+          </label>
+          <label style="flex:1;min-width:150px;font-size:0.8rem;">Mật khẩu (ít nhất 8 ký tự)
+            <input id="newUserPassword" type="password" class="search-box" required minlength="8" autocomplete="new-password" style="width:100%;" />
+          </label>
+          <label style="min-width:130px;font-size:0.8rem;">Vai trò
+            <select id="newUserRole" class="search-box" style="width:100%;">
+              <option value="staff">Nhân viên</option>
+              <option value="viewer">Chỉ xem</option>
+              <option value="admin">Admin</option>
+            </select>
+          </label>
+          <button class="btn btn-primary" type="submit">Tạo user</button>
+        </form>
+        <div style="overflow:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:0.85rem;min-width:620px;">
+            <thead><tr style="background:#f8fafc;">
+              <th style="padding:0.6rem;text-align:left;">Tên đăng nhập</th>
+              <th style="padding:0.6rem;text-align:left;">Vai trò</th>
+              <th style="padding:0.6rem;text-align:center;">Hoạt động</th>
+              <th style="padding:0.6rem;text-align:left;">Đặt mật khẩu mới (tùy chọn)</th>
+              <th style="padding:0.6rem;"></th>
+            </tr></thead>
+            <tbody id="userTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 
   <!-- Image Lightbox -->
@@ -1328,6 +1368,7 @@
 
     let authToken = localStorage.getItem("order_token") || "";
     let authUser = localStorage.getItem("order_user") || "";
+    let authRole = "";
     let currentDetailId = null;
     let currentScaleTicket = null;
     let currentScaleTicketId = null;
@@ -1357,6 +1398,7 @@
       if (res.status === 401) {
         authToken = "";
         authUser = "";
+        authRole = "";
         localStorage.removeItem("order_token");
         localStorage.removeItem("order_user");
         applyAuthUI();
@@ -1370,13 +1412,17 @@
       document.querySelectorAll(".auth-only").forEach(el => {
         el.style.display = logged ? "" : "none";
       });
+      document.querySelectorAll(".role-only").forEach(el => {
+        const allowedRoles = (el.dataset.roles || "").split(",").filter(Boolean);
+        el.style.display = logged && allowedRoles.includes(authRole) ? "" : "none";
+      });
       const loginBtn = document.getElementById("loginBtn");
       const logoutBtn = document.getElementById("logoutBtn");
       const userLabel = document.getElementById("userLabel");
       const guestBanner = document.getElementById("guestBanner");
       if (loginBtn) loginBtn.style.display = logged ? "none" : "";
       if (logoutBtn) logoutBtn.style.display = logged ? "" : "none";
-      if (userLabel) userLabel.textContent = logged ? ("👤 " + authUser) : "";
+      if (userLabel) userLabel.textContent = logged ? (`👤 ${authUser} · ${authRole}`) : "";
       if (guestBanner) {
         guestBanner.style.display = logged ? "none" : "block";
         guestBanner.textContent = t("guest_hint");
@@ -1384,6 +1430,29 @@
       // Re-enable upload button state only if files selected
       const ub = document.getElementById("uploadBtn");
       if (ub && logged) ub.disabled = !selectedFiles.length;
+    }
+
+    async function refreshAuthAccount() {
+      if (!authToken) return;
+      try {
+        const response = await fetch("/api/me", { headers: authHeaders() });
+        const account = await response.json();
+        if (!response.ok || !account.authenticated) {
+          authToken = "";
+          authUser = "";
+          authRole = "";
+          localStorage.removeItem("order_token");
+          localStorage.removeItem("order_user");
+        } else {
+          authUser = account.username;
+          authRole = account.role;
+          localStorage.setItem("order_user", authUser);
+        }
+      } catch (error) {
+        authRole = "";
+        showToast("Không thể xác minh quyền đăng nhập. Vui lòng tải lại trang.", "error");
+      }
+      applyAuthUI();
     }
 
     // Columns shown in table (key fields) — product_image first
@@ -2321,8 +2390,8 @@ document.getElementById("searchInput").placeholder = t("search");
           <div style="display:flex;flex-wrap:wrap;align-items:end;gap:0.65rem 1rem;margin-bottom:0.85rem;">
             <label style="display:inline-flex;align-items:center;gap:0.5rem;margin:0;font-size:0.85rem;">${label("Số vòi rót", "Number of spouts", "灌装头数量")} <input id="realScaleSpoutCount" class="search-box" type="number" min="1" max="100" step="1" value="${count}" style="width:80px;padding:0.4rem;" /></label>
             <button type="button" class="btn btn-ghost" id="realScaleBuildBtn" style="font-size:0.85rem;">${label("Tạo bảng nhập", "Create input table", "创建录入表")}</button>
-            <button type="button" class="btn btn-primary" id="scaleSaveBtn" style="font-size:0.85rem;">${saveLabel}</button>
-            <button type="button" class="btn btn-ghost" id="scaleExportBtn" style="font-size:0.85rem;">${label("Xuất Excel", "Export Excel", "导出 Excel")}</button>
+            <button type="button" class="btn btn-primary role-only" data-roles="admin,staff" id="scaleSaveBtn" style="font-size:0.85rem;">${saveLabel}</button>
+            <button type="button" class="btn btn-ghost role-only" data-roles="admin,staff,viewer" id="scaleExportBtn" style="font-size:0.85rem;">${label("Xuất Excel", "Export Excel", "导出 Excel")}</button>
           </div>
           <div id="realScaleTable" style="overflow:auto;border:1px solid #e2e8f0;border-radius:8px;background:#fff;"></div>
           <div id="realScaleMessage" style="margin-top:0.45rem;color:var(--muted);font-size:0.8rem;">${label("Nhập số cân thực tế theo từng vòi. Trọng lượng sáp = rót lần cuối − vỏ cốc; trọng lượng trung bình được tính tự động.", "Enter actual readings for each spout. Wax weight = final pour − cup tare; average weight is calculated automatically.", "按灌装头录入实际称重。蜡重 = 最后灌装 − 杯重；平均重量自动计算。")}${hasItemWaxWeight ? `<br>${label("So với trọng lượng mã hàng: thấp hơn màu đỏ, cao hơn đến 5% màu xanh, vượt quá 5% màu vàng.", "Compared with item weight: lower is red, up to 5% higher is green, and more than 5% higher is yellow.", "与货号重量比较：低于为红色，高出不超过 5% 为绿色，超过 5% 为黄色。")}` : ""}</div>
@@ -2461,6 +2530,7 @@ document.getElementById("searchInput").placeholder = t("search");
       ticket.querySelector("#realScaleSpoutCount").addEventListener("change", rebuildTable);
       ticket.querySelector("#scaleSaveBtn").addEventListener("click", saveScaleTicket);
       ticket.querySelector("#scaleExportBtn").addEventListener("click", exportScaleTicket);
+      applyAuthUI();
       buildTable();
       updateTicket();
     }
@@ -2513,7 +2583,7 @@ document.getElementById("searchInput").placeholder = t("search");
                   <th style="padding:0.45rem;">${label("Tổng sáp", "Wax total", "蜡重")} (g)</th>
                 </tr></thead><tbody>${details}</tbody>
               </table></div>
-            </details>${isActual ? `<button type="button" class="btn btn-ghost auth-only" data-edit-scale-ticket="${ticket.id}" style="font-size:0.8rem;margin-top:0.45rem;">${label("Sửa / nhập tiếp", "Edit / continue", "编辑 / 继续录入")}</button>` : ""}</td>
+            </details>${isActual ? `<button type="button" class="btn btn-ghost auth-only role-only" data-roles="admin,staff" data-edit-scale-ticket="${ticket.id}" style="font-size:0.8rem;margin-top:0.45rem;">${label("Sửa / nhập tiếp", "Edit / continue", "编辑 / 继续录入")}</button>` : ""}</td>
           </tr>`;
         }).join("");
         history.innerHTML = `<section class="detail-section">
@@ -3111,6 +3181,7 @@ document.getElementById("searchInput").placeholder = t("search");
         if (!res.ok) throw new Error(data.detail || t("login_fail"));
         authToken = data.token;
         authUser = data.username;
+        authRole = data.role;
         localStorage.setItem("order_token", authToken);
         localStorage.setItem("order_user", authUser);
         document.getElementById("loginModal").classList.remove("open");
@@ -3124,11 +3195,119 @@ document.getElementById("searchInput").placeholder = t("search");
     document.getElementById("logoutBtn").addEventListener("click", () => {
       authToken = "";
       authUser = "";
+      authRole = "";
       localStorage.removeItem("order_token");
       localStorage.removeItem("order_user");
       applyAuthUI();
       document.getElementById("modal").classList.remove("open");
       showToast(t("logout"));
+    });
+
+    function roleLabel(role) {
+      const labels = {
+        admin: { vi: "Admin", en: "Admin", zh: "管理员" },
+        staff: { vi: "Nhân viên", en: "Staff", zh: "员工" },
+        viewer: { vi: "Chỉ xem", en: "Viewer", zh: "只读" },
+      };
+      return labels[role]?.[lang] || role;
+    }
+
+    async function loadUsers() {
+      const body = document.getElementById("userTableBody");
+      try {
+        const response = await authFetch("/api/users");
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "Không thể tải danh sách user");
+        body.innerHTML = data.map(account => `
+          <tr>
+            <td style="padding:0.55rem;">${esc(account.username)}</td>
+            <td style="padding:0.55rem;">
+              <select class="search-box" data-user-role="${esc(account.username)}">
+                ${["admin", "staff", "viewer"].map(role => `<option value="${role}" ${account.role === role ? "selected" : ""}>${roleLabel(role)}</option>`).join("")}
+              </select>
+            </td>
+            <td style="padding:0.55rem;text-align:center;"><input type="checkbox" data-user-active="${esc(account.username)}" ${account.is_active ? "checked" : ""} /></td>
+            <td style="padding:0.55rem;"><input type="password" class="search-box" data-user-password="${esc(account.username)}" minlength="8" placeholder="Tối thiểu 8 ký tự" autocomplete="new-password" style="width:100%;" /></td>
+            <td style="padding:0.55rem;"><button type="button" class="btn btn-ghost" data-save-user="${esc(account.username)}">Lưu</button></td>
+          </tr>`).join("");
+        body.querySelectorAll("[data-save-user]").forEach(button => {
+          button.addEventListener("click", async () => {
+            const username = button.dataset.saveUser;
+            const row = button.closest("tr");
+            const passwordInput = row.querySelector("[data-user-password]");
+            const payload = {
+              role: row.querySelector("[data-user-role]").value,
+              is_active: row.querySelector("[data-user-active]").checked,
+            };
+            if (passwordInput.value) payload.password = passwordInput.value;
+            button.disabled = true;
+            try {
+              const response = await authFetch(`/api/users/${encodeURIComponent(username)}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+              });
+              const result = await response.json();
+              if (!response.ok) throw new Error(result.detail || "Không thể cập nhật user");
+              if (username === authUser) {
+                await refreshAuthAccount();
+                if (authRole !== "admin") {
+                  document.getElementById("userManagerModal").classList.remove("open");
+                  showToast("Tài khoản của bạn đã được cập nhật.");
+                  return;
+                }
+              }
+              showToast("Đã cập nhật user.");
+              await loadUsers();
+            } catch (error) {
+              showToast(error.message || "Không thể cập nhật user", "error");
+            } finally {
+              if (button.isConnected) button.disabled = false;
+            }
+          });
+        });
+      } catch (error) {
+        body.innerHTML = `<tr><td colspan="5" style="padding:0.75rem;color:var(--danger);">${esc(error.message || "Không thể tải danh sách user")}</td></tr>`;
+      }
+    }
+
+    document.getElementById("userManagerBtn").addEventListener("click", () => {
+      document.getElementById("userManagerModal").classList.add("open");
+      loadUsers();
+    });
+    document.getElementById("userManagerClose").addEventListener("click", () => {
+      document.getElementById("userManagerModal").classList.remove("open");
+    });
+    document.getElementById("userManagerModal").addEventListener("click", event => {
+      if (event.target.id === "userManagerModal") event.currentTarget.classList.remove("open");
+    });
+    document.getElementById("createUserForm").addEventListener("submit", async event => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const usernameInput = document.getElementById("newUsername");
+      const passwordInput = document.getElementById("newUserPassword");
+      const submit = form.querySelector('[type="submit"]');
+      submit.disabled = true;
+      try {
+        const response = await authFetch("/api/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: usernameInput.value.trim(),
+            password: passwordInput.value,
+            role: document.getElementById("newUserRole").value,
+          }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "Không thể tạo user");
+        form.reset();
+        showToast("Đã tạo user.");
+        await loadUsers();
+      } catch (error) {
+        showToast(error.message || "Không thể tạo user", "error");
+      } finally {
+        submit.disabled = false;
+      }
     });
 
     // Change password
@@ -3192,6 +3371,7 @@ document.getElementById("searchInput").placeholder = t("search");
     document.querySelectorAll(".nav-tabs button").forEach(btn => btn.classList.toggle("active", btn.dataset.panel === "orders"));
     document.querySelectorAll(".panel").forEach(p => p.classList.toggle("active", p.id === "panel-orders"));
     applyAuthUI();
+    refreshAuthAccount();
     document.getElementById("loginBtn").textContent = t("login");
     document.getElementById("logoutBtn").textContent = t("logout");
     document.getElementById("changePassBtn").textContent = t("change_password");

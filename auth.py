@@ -1,6 +1,6 @@
-"""Simple token-based auth with persistent password (changeable).
+"""Token authentication and database-backed user accounts.
 
-Credentials stored in data/credentials.json (created on first run).
+The legacy admin credential is imported from data/credentials.json on startup.
 
 Default account (first run / reset):
   username: admin
@@ -20,7 +20,8 @@ import secrets
 import time
 from typing import Optional, Tuple
 
-from fastapi import Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
+from models import SessionLocal, UserAccount
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CRED_PATH = os.path.join(BASE_DIR, "data", "credentials.json")
@@ -81,18 +82,68 @@ def get_admin_username() -> str:
 
 
 def verify_password(username: str, password: str) -> bool:
+    db = SessionLocal()
+    try:
+        account = db.query(UserAccount).filter(UserAccount.username == username).first()
+        if account:
+            if not account.is_active:
+                return False
+            return hmac.compare_digest(_hash_password(password, account.salt), account.password_hash)
+    finally:
+        db.close()
+
     cred = _ensure_credentials()
     if username != cred.get("username"):
         return False
-    salt = cred.get("salt") or ""
-    expected = cred.get("password_hash") or ""
-    actual = _hash_password(password, salt)
-    return hmac.compare_digest(actual, expected)
+    actual = _hash_password(password, cred.get("salt") or "")
+    return hmac.compare_digest(actual, cred.get("password_hash") or "")
+
+
+def ensure_admin_account() -> None:
+    cred = _ensure_credentials()
+    username = str(cred.get("username") or DEFAULT_USER)
+    salt = cred.get("salt") or secrets.token_hex(16)
+    password_hash = cred.get("password_hash") or _hash_password(DEFAULT_PASS, salt)
+    db = SessionLocal()
+    try:
+        account = db.query(UserAccount).filter(UserAccount.username == username).first()
+        if account:
+            return
+        db.add(UserAccount(
+            username=username,
+            salt=salt,
+            password_hash=password_hash,
+            role="admin",
+            is_active=True,
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+def get_user_role(username: str) -> Optional[str]:
+    db = SessionLocal()
+    try:
+        account = db.query(UserAccount).filter(
+            UserAccount.username == username,
+            UserAccount.is_active.is_(True),
+        ).first()
+        return account.role if account else None
+    finally:
+        db.close()
+
+
+def set_user_password(account: UserAccount, password: str) -> None:
+    account.salt = secrets.token_hex(16)
+    account.password_hash = _hash_password(password, account.salt)
 
 
 def change_password(username: str, old_password: str, new_password: str) -> Tuple[bool, str]:
     """
-    Change password for the admin user.
+    Change password for the authenticated user.
     Returns (ok, message).
     """
     if not new_password or len(new_password) < 4:
@@ -100,14 +151,23 @@ def change_password(username: str, old_password: str, new_password: str) -> Tupl
     if not verify_password(username, old_password):
         return False, "Current password is incorrect"
 
-    cred = _ensure_credentials()
-    if username != cred.get("username"):
-        return False, "User not found"
-
-    salt = secrets.token_hex(16)
-    cred["salt"] = salt
-    cred["password_hash"] = _hash_password(new_password, salt)
-    _save_credentials(cred)
+    db = SessionLocal()
+    try:
+        account = db.query(UserAccount).filter(UserAccount.username == username).first()
+        if not account:
+            return False, "User not found"
+        set_user_password(account, new_password)
+        db.commit()
+        if username == get_admin_username():
+            cred = _ensure_credentials()
+            cred["salt"] = account.salt
+            cred["password_hash"] = account.password_hash
+            _save_credentials(cred)
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
     return True, "Password changed successfully"
 
 
@@ -133,8 +193,6 @@ def parse_token(token: str) -> Optional[str]:
         username, exp_s = text.rsplit(":", 1)
         if int(exp_s) < int(time.time()):
             return None
-        if username != get_admin_username():
-            return None
         return username
     except Exception:
         return None
@@ -159,7 +217,7 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> str:
             headers={"WWW-Authenticate": "Bearer"},
         )
     user = parse_token(token)
-    if not user:
+    if not user or not get_user_role(user):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
@@ -173,4 +231,14 @@ def get_optional_user(authorization: Optional[str] = Header(None)) -> Optional[s
     token = _extract_bearer(authorization)
     if not token:
         return None
-    return parse_token(token)
+    user = parse_token(token)
+    return user if user and get_user_role(user) else None
+
+
+def require_roles(*roles: str):
+    def dependency(user: str = Depends(get_current_user)) -> str:
+        role = get_user_role(user)
+        if role not in roles:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+        return user
+    return dependency

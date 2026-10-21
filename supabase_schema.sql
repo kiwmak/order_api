@@ -76,9 +76,25 @@ CREATE TABLE IF NOT EXISTS scale_tickets (
 
 CREATE INDEX IF NOT EXISTS ix_scale_tickets_item_code ON scale_tickets (item_code);
 
+-- Tài khoản đăng nhập và vai trò phân quyền.
+CREATE TABLE IF NOT EXISTS user_accounts (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(100) NOT NULL UNIQUE,
+    salt VARCHAR(64) NOT NULL,
+    password_hash VARCHAR(128) NOT NULL,
+    role VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'staff', 'viewer')),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT (NOW() AT TIME ZONE 'utc') NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_user_accounts_id ON user_accounts (id);
+CREATE INDEX IF NOT EXISTS ix_user_accounts_username ON user_accounts (username);
+
 -- (Tùy chọn) Cho phép app đọc/ghi qua role mặc định
 -- GRANT ALL ON order_items TO postgres;
 -- GRANT USAGE, SELECT ON SEQUENCE order_items_id_seq TO postgres;
+-- GRANT ALL ON user_accounts TO postgres;
+-- GRANT USAGE, SELECT ON SEQUENCE user_accounts_id_seq TO postgres;
 
 -- Nếu bảng đã tồn tại với product_image VARCHAR(500), chạy thêm:
 -- ALTER TABLE order_items ALTER COLUMN product_image TYPE TEXT;

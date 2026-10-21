@@ -21,12 +21,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, cast, String
+from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel, Field, ValidationError
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from models import init_db, get_db, OrderItem, ScaleTicket, SessionLocal
+from models import init_db, get_db, OrderItem, ScaleTicket, UserAccount, SessionLocal
 from importer import parse_excel, rows_to_models
 from translations import FIELD_LABELS, UI_TEXT
 from auth import (
@@ -34,6 +35,10 @@ from auth import (
     create_token,
     get_current_user,
     get_optional_user,
+    get_user_role,
+    ensure_admin_account,
+    require_roles,
+    set_user_password,
     change_password,
 )
 
@@ -139,6 +144,7 @@ class LoginResponse(BaseModel):
     success: bool
     token: str
     username: str
+    role: str
     message: str
 
 
@@ -384,6 +390,7 @@ def _scale_ticket_ui_response(ticket: ScaleTicket) -> ScaleTicketUIOut:
 @app.on_event("startup")
 def on_startup():
     init_db()
+    ensure_admin_account()
 
 
 # ---------- Web UI ----------
@@ -399,13 +406,18 @@ async def index(request: Request):
 # ---------- Auth ----------
 @app.post("/api/login", response_model=LoginResponse)
 def login(body: LoginRequest):
-    if not verify_password(body.username.strip(), body.password):
+    username = body.username.strip()
+    if not verify_password(username, body.password):
         raise HTTPException(401, "Invalid username or password")
-    token = create_token(body.username.strip())
+    role = get_user_role(username)
+    if not role:
+        raise HTTPException(401, "Invalid or inactive user")
+    token = create_token(username)
     return LoginResponse(
         success=True,
         token=token,
-        username=body.username.strip(),
+        username=username,
+        role=role,
         message="Login OK",
     )
 
@@ -413,8 +425,91 @@ def login(body: LoginRequest):
 @app.get("/api/me")
 def me(user: Optional[str] = Depends(get_optional_user)):
     if not user:
-        return {"authenticated": False, "username": None}
-    return {"authenticated": True, "username": user}
+        return {"authenticated": False, "username": None, "role": None}
+    return {"authenticated": True, "username": user, "role": get_user_role(user)}
+
+
+class UserCreateRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=8, max_length=200)
+    role: Literal["admin", "staff", "viewer"]
+
+
+class UserUpdateRequest(BaseModel):
+    role: Optional[Literal["admin", "staff", "viewer"]] = None
+    is_active: Optional[bool] = None
+    password: Optional[str] = Field(None, min_length=8, max_length=200)
+
+
+def _user_response(account: UserAccount) -> dict:
+    return {
+        "username": account.username,
+        "role": account.role,
+        "is_active": account.is_active,
+        "created_at": account.created_at,
+    }
+
+
+@app.get("/api/users")
+def list_users(
+    db: Session = Depends(get_db),
+    user: str = Depends(require_roles("admin")),
+):
+    return [_user_response(account) for account in db.query(UserAccount).order_by(UserAccount.username).all()]
+
+
+@app.post("/api/users", status_code=201)
+def create_user(
+    body: UserCreateRequest,
+    db: Session = Depends(get_db),
+    user: str = Depends(require_roles("admin")),
+):
+    username = body.username.strip()
+    if not username:
+        raise HTTPException(400, "Username is required")
+    if db.query(UserAccount).filter(UserAccount.username == username).first():
+        raise HTTPException(409, "Username already exists")
+    account = UserAccount(username=username, salt="", password_hash="", role=body.role, is_active=True)
+    set_user_password(account, body.password)
+    db.add(account)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "Username already exists") from exc
+    db.refresh(account)
+    return _user_response(account)
+
+
+@app.put("/api/users/{username}")
+def update_user(
+    username: str,
+    body: UserUpdateRequest,
+    db: Session = Depends(get_db),
+    user: str = Depends(require_roles("admin")),
+):
+    account = db.query(UserAccount).filter(UserAccount.username == username).first()
+    if not account:
+        raise HTTPException(404, "User not found")
+    updated_role = body.role if body.role is not None else account.role
+    updated_active = body.is_active if body.is_active is not None else account.is_active
+    removes_admin = account.role == "admin" and account.is_active and (
+        updated_role != "admin" or not updated_active
+    )
+    if removes_admin:
+        active_admins = db.query(UserAccount).filter(
+            UserAccount.role == "admin",
+            UserAccount.is_active.is_(True),
+        ).count()
+        if active_admins <= 1:
+            raise HTTPException(400, "At least one active administrator is required")
+    account.role = updated_role
+    account.is_active = updated_active
+    if body.password is not None:
+        set_user_password(account, body.password)
+    db.commit()
+    db.refresh(account)
+    return _user_response(account)
 
 
 class ChangePasswordRequest(BaseModel):
@@ -571,7 +666,7 @@ def _import_bytes(content: bytes, filename: str, db: Session) -> FileImportDetai
 async def import_excel(
     files: List[UploadFile] = File(..., description="One or more Excel files"),
     db: Session = Depends(get_db),
-    user: str = Depends(get_current_user),
+    user: str = Depends(require_roles("admin")),
 ):
     # Normalize: filter empty / browser ghost slots
     uploads = [f for f in files if f is not None and (f.filename or "").strip()]
@@ -762,7 +857,7 @@ def get_by_order_number(order_number: str, db: Session = Depends(get_db)):
 @app.delete("/api/orders")
 def clear_all(
     db: Session = Depends(get_db),
-    user: str = Depends(get_current_user),
+    user: str = Depends(require_roles("admin")),
 ):
     count = db.query(OrderItem).delete()
     db.commit()
@@ -773,7 +868,7 @@ def clear_all(
 def delete_item(
     item_id: int,
     db: Session = Depends(get_db),
-    user: str = Depends(get_current_user),
+    user: str = Depends(require_roles("admin")),
 ):
     item = db.query(OrderItem).filter(OrderItem.id == item_id).first()
     if not item:
@@ -883,8 +978,11 @@ def create_order_scale_ticket(
     db: Session = Depends(get_db),
     user: Optional[str] = Depends(get_optional_user),
 ):
-    if body.mode == "actual" and not user:
-        raise HTTPException(401, "Login required")
+    if body.mode == "actual":
+        if not user:
+            raise HTTPException(401, "Login required")
+        if get_user_role(user) not in ("admin", "staff"):
+            raise HTTPException(403, "Insufficient permissions")
     item = db.query(OrderItem).filter(OrderItem.id == item_id).first()
     if not item:
         raise HTTPException(404, "Order item not found")
@@ -901,7 +999,7 @@ def update_order_scale_ticket(
     ticket_id: int,
     body: ScaleTicketUIInput,
     db: Session = Depends(get_db),
-    user: str = Depends(get_current_user),
+    user: str = Depends(require_roles("admin", "staff")),
 ):
     if body.mode != "actual":
         raise HTTPException(400, "Only actual weighing tickets can be edited")
@@ -930,7 +1028,7 @@ def export_order_scale_ticket(
     item_id: int,
     body: ScaleTicketUIInput,
     db: Session = Depends(get_db),
-    user: str = Depends(get_current_user),
+    user: str = Depends(require_roles("admin", "staff", "viewer")),
 ):
     if body.mode != "actual":
         raise HTTPException(400, "Only actual weighing tickets can be exported")
@@ -1025,7 +1123,7 @@ def update_item(
     item_id: int,
     body: OrderItemUpdate,
     db: Session = Depends(get_db),
-    user: str = Depends(get_current_user),
+    user: str = Depends(require_roles("admin")),
 ):
     item = db.query(OrderItem).filter(OrderItem.id == item_id).first()
     if not item:
@@ -1058,7 +1156,7 @@ def list_scale_tickets(
 def create_scale_ticket(
     body: ScaleTicketCreate,
     db: Session = Depends(get_db),
-    user: str = Depends(get_current_user),
+    user: Optional[str] = Depends(get_optional_user),
 ):
     item_code = body.item_code.strip()
     if not item_code:
@@ -1103,7 +1201,7 @@ def create_scale_ticket(
 def delete_scale_ticket(
     ticket_id: int,
     db: Session = Depends(get_db),
-    user: str = Depends(get_current_user),
+    user: str = Depends(require_roles("admin")),
 ):
     ticket = db.query(ScaleTicket).filter(ScaleTicket.id == ticket_id).first()
     if not ticket:
@@ -1148,7 +1246,7 @@ def _scale_ticket_backup(ticket: ScaleTicket) -> dict:
 @app.get("/api/backup")
 def backup_database(
     db: Session = Depends(get_db),
-    user: str = Depends(get_current_user),
+    user: str = Depends(require_roles("admin")),
 ):
     """Download full database backup as JSON (includes product images)."""
     items = db.query(OrderItem).order_by(OrderItem.id).all()
@@ -1229,7 +1327,7 @@ async def restore_database(
     file: UploadFile = File(..., description="Backup JSON file"),
     mode: str = Query("replace", description="replace = clear then import; merge = upsert by order_number+item_code"),
     db: Session = Depends(get_db),
-    user: str = Depends(get_current_user),
+    user: str = Depends(require_roles("admin")),
 ):
     """Restore database from a JSON backup file."""
     if not file.filename or not file.filename.lower().endswith(".json"):
@@ -1457,7 +1555,7 @@ async def restore_database(
 
 
 @app.get("/api/storage/status")
-def storage_status(user: str = Depends(get_current_user)):
+def storage_status(user: str = Depends(require_roles("admin"))):
     """Check whether Supabase Storage is configured (no secrets returned)."""
     from storage import storage_configured, _bucket
     import os
