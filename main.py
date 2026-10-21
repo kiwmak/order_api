@@ -22,6 +22,9 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, cast, String
 from pydantic import BaseModel, Field, ValidationError
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 
 from models import init_db, get_db, OrderItem, ScaleTicket, SessionLocal
 from importer import parse_excel, rows_to_models
@@ -918,6 +921,101 @@ def update_order_scale_ticket(
     db.commit()
     db.refresh(ticket)
     return _scale_ticket_ui_response(ticket)
+
+
+@app.post("/api/orders/{item_id}/scale-tickets/export")
+def export_order_scale_ticket(
+    item_id: int,
+    body: ScaleTicketUIInput,
+    db: Session = Depends(get_db),
+    user: str = Depends(get_current_user),
+):
+    if body.mode != "actual":
+        raise HTTPException(400, "Only actual weighing tickets can be exported")
+    _validate_scale_ticket_ui(body)
+    item = db.query(OrderItem).filter(OrderItem.id == item_id).first()
+    if not item:
+        raise HTTPException(404, "Order item not found")
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Phieu can thuc te"
+    target_weight = item.unit_wax_weight_g
+    has_target_weight = target_weight is not None and math.isfinite(target_weight) and target_weight > 0
+    sheet.append(["Phiếu cân thực tế"])
+    sheet.append(["Mã hàng", item.item_code or ""])
+    sheet.append(["Đơn hàng", item.order_number or ""])
+    sheet.append(["Trọng lượng mã hàng (g)", target_weight if has_target_weight else ""])
+    sheet.append([])
+    headers = [
+        "STT / Vòi",
+        "Vỏ cốc (g)",
+        "Rót lần đầu (gồm cốc+sáp) (g)",
+        "Sáp lần 1 (g)",
+        "Rót lần cuối (gồm cốc+sáp) (g)",
+        "Sáp rót thêm (g)",
+        "Trọng lượng sáp nến (g)",
+    ]
+    sheet.append(headers)
+    header_row = sheet.max_row
+    for reading in body.readings:
+        cup = reading.cup
+        pour1 = reading.pour1
+        pour2 = reading.pour2
+        sheet.append([
+            reading.spout,
+            cup,
+            pour1,
+            pour1 - cup if pour1 is not None and cup is not None else None,
+            pour2,
+            pour2 - pour1 if pour2 is not None and pour1 is not None else None,
+            pour2 - cup if pour2 is not None and cup is not None else None,
+        ])
+        wax_cell = sheet.cell(sheet.max_row, 7)
+        wax_weight = wax_cell.value
+        if has_target_weight and wax_weight is not None:
+            if wax_weight < target_weight:
+                wax_cell.fill = PatternFill(fill_type="solid", fgColor="FECACA")
+                wax_cell.font = Font(color="DC2626", bold=True)
+            elif wax_weight > target_weight * 1.05:
+                wax_cell.fill = PatternFill(fill_type="solid", fgColor="FEF3C7")
+                wax_cell.font = Font(color="A16207", bold=True)
+            elif wax_weight > target_weight:
+                wax_cell.fill = PatternFill(fill_type="solid", fgColor="DCFCE7")
+                wax_cell.font = Font(color="15803D", bold=True)
+
+    readings_start = header_row + 1
+    readings_end = sheet.max_row
+    complete_wax_count = sum(
+        reading.cup is not None and reading.pour2 is not None
+        for reading in body.readings
+    )
+    average = _validate_scale_ticket_ui(body)
+    sheet.append(["", "", "", "", "", "Trọng lượng trung bình (g)", average if complete_wax_count else None])
+    for cell in sheet[sheet.max_row]:
+        cell.font = Font(bold=True)
+    for cell in sheet[header_row]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill(fill_type="solid", fgColor="334155")
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    for row in sheet.iter_rows(min_row=readings_start, max_row=readings_end, min_col=1, max_col=7):
+        for cell in row:
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+    column_widths = [12, 16, 32, 16, 32, 18, 24]
+    for index, width in enumerate(column_widths, start=1):
+        sheet.column_dimensions[get_column_letter(index)].width = width
+    sheet.freeze_panes = f"A{readings_start}"
+    sheet.auto_filter.ref = f"A{header_row}:G{readings_end}"
+    output = io.BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="phieu_can_{item.id}.xlsx"'
+        },
+    )
 
 
 @app.put("/api/orders/{item_id}", response_model=OrderItemOut)

@@ -2304,6 +2304,12 @@ document.getElementById("searchInput").placeholder = t("search");
       currentScaleTicketId = existingTicket?.id ?? null;
       const label = (vi, en, zh) => lang === "zh" ? zh : lang === "en" ? en : vi;
       const ticket = document.getElementById("scaleTicket");
+      const currentItem = orders.find(item => item.id === currentDetailId);
+      const itemWaxWeight = Number(currentItem?.unit_wax_weight_g);
+      const hasItemWaxWeight = currentItem?.unit_wax_weight_g != null
+        && currentItem.unit_wax_weight_g !== ""
+        && Number.isFinite(itemWaxWeight)
+        && itemWaxWeight > 0;
       const initialReadings = existingTicket?.readings || [];
       const count = existingTicket?.spout_count || 12;
       const saveLabel = existingTicket
@@ -2319,7 +2325,7 @@ document.getElementById("searchInput").placeholder = t("search");
             <button type="button" class="btn btn-ghost" id="scaleExportBtn" style="font-size:0.85rem;">${label("Xuất Excel", "Export Excel", "导出 Excel")}</button>
           </div>
           <div id="realScaleTable" style="overflow:auto;border:1px solid #e2e8f0;border-radius:8px;background:#fff;"></div>
-          <div id="realScaleMessage" style="margin-top:0.45rem;color:var(--muted);font-size:0.8rem;">${label("Nhập số cân thực tế theo từng vòi. Trọng lượng sáp = rót lần cuối − vỏ cốc; trọng lượng trung bình được tính tự động.", "Enter actual readings for each spout. Wax weight = final pour − cup tare; average weight is calculated automatically.", "按灌装头录入实际称重。蜡重 = 最后灌装 − 杯重；平均重量自动计算。")}</div>
+          <div id="realScaleMessage" style="margin-top:0.45rem;color:var(--muted);font-size:0.8rem;">${label("Nhập số cân thực tế theo từng vòi. Trọng lượng sáp = rót lần cuối − vỏ cốc; trọng lượng trung bình được tính tự động.", "Enter actual readings for each spout. Wax weight = final pour − cup tare; average weight is calculated automatically.", "按灌装头录入实际称重。蜡重 = 最后灌装 − 杯重；平均重量自动计算。")}${hasItemWaxWeight ? `<br>${label("So với trọng lượng mã hàng: thấp hơn màu đỏ, cao hơn đến 5% màu xanh, vượt quá 5% màu vàng.", "Compared with item weight: lower is red, up to 5% higher is green, and more than 5% higher is yellow.", "与货号重量比较：低于为红色，高出不超过 5% 为绿色，超过 5% 为黄色。")}` : ""}</div>
         </section>`;
 
       const buildTable = () => {
@@ -2341,7 +2347,7 @@ document.getElementById("searchInput").placeholder = t("search");
               ${inputRow("pour1", label("Rót lần đầu (bao gồm cốc và sáp)", "First pour (cup and wax)", "第一次灌装（含杯和蜡）"))}
               <tr><th scope="row" style="padding:0.3rem 0.65rem;text-align:left;font-size:0.75rem;font-weight:400;color:var(--muted);">${label("Sáp rót thêm (rót cuối − rót lần 1)", "Additional wax (final pour − first pour)", "追加蜡重（最后灌装 − 第一次灌装）")}</th>${Array.from({ length: requestedCount }, (_, index) => `<td id="realPour2Wax${index + 1}" style="padding:0.3rem;text-align:center;font-size:0.75rem;color:var(--muted);">—</td>`).join("")}</tr>
               ${inputRow("pour2", label("Rót lần cuối (bao gồm cốc và sáp)", "Final pour (cup and wax)", "最后一次灌装（含杯和蜡）"))}
-              <tr><th scope="row" style="padding:0.65rem;text-align:left;font-weight:500;">${label("Trọng lượng sáp nến", "Candle wax weight", "蜡烛蜡重")}</th>${Array.from({ length: requestedCount }, (_, index) => `<td id="realWaxWeight${index + 1}" style="padding:0.65rem;text-align:center;">—</td>`).join("")}</tr>
+              <tr><th scope="row" style="padding:0.65rem;text-align:left;font-weight:500;">${label("Trọng lượng sáp nến", "Candle wax weight", "蜡烛蜡重")}${hasItemWaxWeight ? `<div style="font-size:0.78rem;color:var(--muted);font-weight:400;">${label("Mã hàng", "Item", "货号")}: ${itemWaxWeight} g</div>` : ""}</th>${Array.from({ length: requestedCount }, (_, index) => `<td id="realWaxWeight${index + 1}" style="padding:0.65rem;text-align:center;">—</td>`).join("")}</tr>
               <tr><th scope="row" style="padding:0.65rem;text-align:left;font-weight:500;">${label("Trọng lượng trung bình", "Average weight", "平均重量")}</th><td id="realScaleAverage" colspan="${requestedCount}" style="padding:0.65rem;text-align:center;font-weight:700;">—</td></tr>
             </tbody>
           </table>`;
@@ -2360,12 +2366,26 @@ document.getElementById("searchInput").placeholder = t("search");
         const spoutCount = Number(ticket.querySelector("#realScaleSpoutCount").value);
         const invalidate = text => {
           message.textContent = text;
-          ticket.querySelectorAll('[id^="realPour1Wax"], [id^="realPour2Wax"], [id^="realWaxWeight"]').forEach(cell => { cell.textContent = "—"; });
+          ticket.querySelectorAll('[id^="realPour1Wax"], [id^="realPour2Wax"], [id^="realWaxWeight"]').forEach(cell => {
+            cell.textContent = "—";
+            cell.style.color = "";
+            cell.style.backgroundColor = "";
+            cell.style.fontWeight = "";
+          });
           ticket.querySelector("#realScaleAverage").textContent = "—";
           currentScaleTicket = null;
         };
         const readings = [];
         for (let spout = 1; spout <= spoutCount; spout++) {
+          const pour1WaxCell = ticket.querySelector(`#realPour1Wax${spout}`);
+          const pour2WaxCell = ticket.querySelector(`#realPour2Wax${spout}`);
+          const waxCell = ticket.querySelector(`#realWaxWeight${spout}`);
+          for (const cell of [pour1WaxCell, pour2WaxCell, waxCell]) {
+            cell.textContent = "—";
+            cell.style.color = "";
+            cell.style.backgroundColor = "";
+            cell.style.fontWeight = "";
+          }
           const values = {};
           for (const field of ["cup", "pour1", "pour2"]) {
             const raw = ticket.querySelector(`[data-field="${field}"][data-spout="${spout}"]`)?.value;
@@ -2383,13 +2403,27 @@ document.getElementById("searchInput").placeholder = t("search");
           }
           readings.push({ spout, ...values });
           if (values.cup !== null && values.pour1 !== null) {
-            ticket.querySelector(`#realPour1Wax${spout}`).textContent = values.pour1 - values.cup;
+            pour1WaxCell.textContent = values.pour1 - values.cup;
           }
           if (values.pour1 !== null && values.pour2 !== null) {
-            ticket.querySelector(`#realPour2Wax${spout}`).textContent = values.pour2 - values.pour1;
+            pour2WaxCell.textContent = values.pour2 - values.pour1;
           }
           if (values.cup !== null && values.pour2 !== null) {
-            ticket.querySelector(`#realWaxWeight${spout}`).textContent = values.pour2 - values.cup;
+            const waxWeight = values.pour2 - values.cup;
+            waxCell.textContent = waxWeight;
+            if (hasItemWaxWeight) {
+              if (waxWeight < itemWaxWeight) {
+                waxCell.style.color = "#dc2626";
+                waxCell.style.fontWeight = "700";
+              } else if (waxWeight > itemWaxWeight * 1.05) {
+                waxCell.style.color = "#a16207";
+                waxCell.style.backgroundColor = "#fef3c7";
+                waxCell.style.fontWeight = "700";
+              } else if (waxWeight > itemWaxWeight) {
+                waxCell.style.color = "#15803d";
+                waxCell.style.fontWeight = "700";
+              }
+            }
           }
         }
         const waxWeights = readings
@@ -2417,7 +2451,7 @@ document.getElementById("searchInput").placeholder = t("search");
           pour2_max: pour2Max,
           readings,
         };
-        message.textContent = label("Có thể lưu phiếu ngay cả khi chưa nhập đủ. Ô trống sẽ được giữ lại; trung bình chỉ tính các vòi đã có vỏ cốc và rót lần cuối.", "You can save the ticket before all readings are entered. Blank fields are kept empty; the average uses spouts with both cup tare and final pour.", "即使未填写完整也可以保存。空白数据会保留为空；平均重量仅计算已填写杯重和最后灌装的灌装头。");
+        message.innerHTML = `${label("Có thể lưu phiếu ngay cả khi chưa nhập đủ. Ô trống sẽ được giữ lại; trung bình chỉ tính các vòi đã có vỏ cốc và rót lần cuối.", "You can save the ticket before all readings are entered. Blank fields are kept empty; the average uses spouts with both cup tare and final pour.", "即使未填写完整也可以保存。空白数据会保留为空；平均重量仅计算已填写杯重和最后灌装的灌装头。")}${hasItemWaxWeight ? `<br>${label("So với trọng lượng mã hàng: thấp hơn màu đỏ, cao hơn đến 5% màu xanh, vượt quá 5% màu vàng.", "Compared with item weight: lower is red, up to 5% higher is green, and more than 5% higher is yellow.", "与货号重量比较：低于为红色，高出不超过 5% 为绿色，超过 5% 为黄色。")}` : ""}`;
       };
 
       const rebuildTable = () => {
