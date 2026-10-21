@@ -2315,6 +2315,7 @@ document.getElementById("searchInput").placeholder = t("search");
               <td style="padding:0.45rem;text-align:center;">${row.pour1_weight_g}</td>
               <td style="padding:0.45rem;text-align:center;">${row.pour2_weight_g}</td>
               <td style="padding:0.45rem;text-align:center;">${row.pour1_weight_g + row.pour2_weight_g}</td>
+              <td style="padding:0.45rem;text-align:center;">${row.cup_weight_g + row.pour1_weight_g + row.pour2_weight_g}</td>
             </tr>`).join("");
           const created = ticket.created_at ? new Date(ticket.created_at).toLocaleString() : "—";
           return `<tr>
@@ -2332,6 +2333,7 @@ document.getElementById("searchInput").placeholder = t("search");
                   <th style="padding:0.45rem;">${label("Rót 1", "Pour 1", "灌装1")} (g)</th>
                   <th style="padding:0.45rem;">${label("Rót 2", "Pour 2", "灌装2")} (g)</th>
                   <th style="padding:0.45rem;">${label("Tổng sáp", "Wax total", "蜡重")} (g)</th>
+                  <th style="padding:0.45rem;">${label("Tổng cốc + sáp", "Cup + wax total", "杯子+蜡总重")} (g)</th>
                 </tr></thead><tbody>${details}</tbody>
               </table></div>
             </details></td>
