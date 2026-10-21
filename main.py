@@ -691,13 +691,18 @@ def update_item(
 
 
 @app.get("/api/scale-tickets/{item_code}", response_model=List[ScaleTicketOut])
-def list_scale_tickets(item_code: str, db: Session = Depends(get_db)):
-    tickets = (
+def list_scale_tickets(
+    item_code: str,
+    order_number: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    query = (
         db.query(ScaleTicket)
         .filter(ScaleTicket.item_code == item_code)
-        .order_by(ScaleTicket.created_at.desc(), ScaleTicket.id.desc())
-        .all()
     )
+    if order_number:
+        query = query.filter(ScaleTicket.order_number == order_number)
+    tickets = query.order_by(ScaleTicket.created_at.desc(), ScaleTicket.id.desc()).all()
     return [_scale_ticket_response(ticket) for ticket in tickets]
 
 
