@@ -881,8 +881,10 @@ def create_order_scale_ticket(
     item_id: int,
     body: ScaleTicketUIInput,
     db: Session = Depends(get_db),
-    user: str = Depends(get_current_user),
+    user: Optional[str] = Depends(get_optional_user),
 ):
+    if body.mode == "actual" and not user:
+        raise HTTPException(401, "Login required")
     item = db.query(OrderItem).filter(OrderItem.id == item_id).first()
     if not item:
         raise HTTPException(404, "Order item not found")
