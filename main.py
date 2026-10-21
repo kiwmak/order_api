@@ -11,7 +11,7 @@ import io
 import math
 import shutil
 import tempfile
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Literal
 from datetime import date, datetime
 from collections import defaultdict
 
@@ -192,6 +192,13 @@ class ScaleTicketReading(BaseModel):
     pour2_weight_g: int = Field(ge=0)
 
 
+class ScaleTicketReadingOut(BaseModel):
+    spout: int
+    cup_weight_g: Optional[int] = None
+    pour1_weight_g: Optional[int] = None
+    pour2_weight_g: Optional[int] = None
+
+
 class ScaleTicketCreate(BaseModel):
     item_code: str = Field(min_length=1, max_length=100)
     order_number: Optional[str] = Field(None, max_length=100)
@@ -203,6 +210,26 @@ class ScaleTicketCreate(BaseModel):
     pour2_min_g: int = Field(ge=0)
     pour2_max_g: int = Field(ge=0)
     readings: List[ScaleTicketReading]
+    notes: Optional[str] = Field(None, max_length=2000)
+
+
+class ScaleTicketUIReading(BaseModel):
+    spout: int = Field(ge=1, le=100)
+    cup: Optional[int] = Field(None, ge=0)
+    pour1: Optional[int] = Field(None, ge=0)
+    pour2: Optional[int] = Field(None, ge=0)
+
+
+class ScaleTicketUIInput(BaseModel):
+    mode: Optional[Literal["actual"]] = None
+    spout_count: int = Field(ge=1, le=100)
+    cup_min: int = Field(ge=0)
+    cup_max: int = Field(ge=0)
+    pour1_min: int = Field(ge=0)
+    pour1_max: int = Field(ge=0)
+    pour2_min: int = Field(ge=0)
+    pour2_max: int = Field(ge=0)
+    readings: List[ScaleTicketUIReading]
     notes: Optional[str] = Field(None, max_length=2000)
 
 
@@ -219,10 +246,31 @@ class ScaleTicketOut(BaseModel):
     pour1_max_g: int
     pour2_min_g: int
     pour2_max_g: int
-    readings: List[ScaleTicketReading]
-    average_wax_weight_g: int
+    readings: List[ScaleTicketReadingOut]
+    average_wax_weight_g: Optional[int] = None
     notes: Optional[str] = None
     created_at: datetime
+    mode: str = "hypothetical"
+
+
+class ScaleTicketUIOut(BaseModel):
+    id: int
+    item_code: str
+    order_number: Optional[str] = None
+    customer_name: Optional[str] = None
+    description: Optional[str] = None
+    spout_count: int
+    cup_min: int
+    cup_max: int
+    pour1_min: int
+    pour1_max: int
+    pour2_min: int
+    pour2_max: int
+    readings: List[ScaleTicketUIReading]
+    average_wax_weight_g: Optional[int] = None
+    notes: Optional[str] = None
+    created_at: datetime
+    mode: str
 
 
 def _validate_scale_ticket(body: ScaleTicketCreate) -> int:
@@ -249,6 +297,7 @@ def _validate_scale_ticket(body: ScaleTicketCreate) -> int:
 
 
 def _scale_ticket_response(ticket: ScaleTicket) -> ScaleTicketOut:
+    readings_data, mode = _scale_ticket_readings(ticket)
     return ScaleTicketOut(
         id=ticket.id,
         item_code=ticket.item_code,
@@ -262,10 +311,69 @@ def _scale_ticket_response(ticket: ScaleTicket) -> ScaleTicketOut:
         pour1_max_g=ticket.pour1_max_g,
         pour2_min_g=ticket.pour2_min_g,
         pour2_max_g=ticket.pour2_max_g,
-        readings=json.loads(ticket.readings_json),
-        average_wax_weight_g=ticket.average_wax_weight_g,
+        readings=[
+            ScaleTicketReadingOut(
+                spout=row["spout"],
+                cup_weight_g=row.get("cup", row.get("cup_weight_g")),
+                pour1_weight_g=row.get("pour1", row.get("pour1_weight_g")),
+                pour2_weight_g=row.get("pour2", row.get("pour2_weight_g")),
+            )
+            for row in readings_data
+        ],
+        average_wax_weight_g=_scale_ticket_average(ticket, readings_data, mode),
         notes=ticket.notes,
         created_at=ticket.created_at,
+        mode=mode,
+    )
+
+
+def _scale_ticket_readings(ticket: ScaleTicket):
+    data = json.loads(ticket.readings_json)
+    if isinstance(data, dict):
+        return data.get("readings", []), data.get("mode", "hypothetical")
+    return data, "hypothetical"
+
+
+def _scale_ticket_average(ticket: ScaleTicket, readings, mode: str):
+    if mode == "actual":
+        wax_weights = [
+            row["pour2"] - row["cup"]
+            for row in readings
+            if row.get("cup") is not None and row.get("pour2") is not None
+        ]
+        return math.floor(sum(wax_weights) / len(wax_weights) + 0.5) if wax_weights else None
+    return ticket.average_wax_weight_g
+
+
+def _scale_ticket_ui_response(ticket: ScaleTicket) -> ScaleTicketUIOut:
+    readings, mode = _scale_ticket_readings(ticket)
+    normalized_readings = [
+        ScaleTicketUIReading(
+            spout=row["spout"],
+            cup=row.get("cup", row.get("cup_weight_g")),
+            pour1=row.get("pour1", row.get("pour1_weight_g")),
+            pour2=row.get("pour2", row.get("pour2_weight_g")),
+        )
+        for row in readings
+    ]
+    return ScaleTicketUIOut(
+        id=ticket.id,
+        item_code=ticket.item_code,
+        order_number=ticket.order_number,
+        customer_name=ticket.customer_name,
+        description=ticket.description,
+        spout_count=ticket.spout_count,
+        cup_min=ticket.cup_min_g,
+        cup_max=ticket.cup_max_g,
+        pour1_min=ticket.pour1_min_g,
+        pour1_max=ticket.pour1_max_g,
+        pour2_min=ticket.pour2_min_g,
+        pour2_max=ticket.pour2_max_g,
+        readings=normalized_readings,
+        average_wax_weight_g=_scale_ticket_average(ticket, readings, mode),
+        notes=ticket.notes,
+        created_at=ticket.created_at,
+        mode=mode,
     )
 
 
@@ -672,6 +780,146 @@ def delete_item(
     return {"deleted": item_id}
 
 
+def _validate_scale_ticket_ui(body: ScaleTicketUIInput) -> int:
+    ranges = (
+        (body.cup_min, body.cup_max),
+        (body.pour1_min, body.pour1_max),
+        (body.pour2_min, body.pour2_max),
+    )
+    if any(minimum > maximum for minimum, maximum in ranges):
+        raise HTTPException(400, "Each minimum weight must be less than or equal to its maximum")
+    if len(body.readings) != body.spout_count:
+        raise HTTPException(400, "Reading count must match spout count")
+    if body.mode == "actual" and not any(
+        reading.cup is not None or reading.pour1 is not None or reading.pour2 is not None
+        for reading in body.readings
+    ):
+        raise HTTPException(400, "Enter at least one reading before saving")
+
+    for index, reading in enumerate(body.readings, start=1):
+        if reading.spout != index:
+            raise HTTPException(400, "Spout numbers must be consecutive and start at 1")
+        values = (reading.cup, reading.pour1, reading.pour2)
+        if body.mode != "actual" and any(value is None for value in values):
+            raise HTTPException(400, "Hypothetical readings must include all weights")
+        if body.mode == "actual":
+            if reading.cup is not None and reading.pour1 is not None and reading.pour1 < reading.cup:
+                raise HTTPException(400, "First pour must be greater than or equal to cup tare")
+            if reading.pour1 is not None and reading.pour2 is not None and reading.pour2 < reading.pour1:
+                raise HTTPException(400, "Final pour must be greater than or equal to first pour")
+            if reading.cup is not None and reading.pour2 is not None and reading.pour2 < reading.cup:
+                raise HTTPException(400, "Final pour must be greater than or equal to cup tare")
+        else:
+            for value, (minimum, maximum) in zip(values, ranges):
+                if value is not None and not minimum <= value <= maximum:
+                    raise HTTPException(400, "Reading is outside the saved range")
+
+    if body.mode == "actual":
+        wax_weights = [
+            reading.pour2 - reading.cup
+            for reading in body.readings
+            if reading.cup is not None and reading.pour2 is not None
+        ]
+    else:
+        wax_weights = [reading.pour1 + reading.pour2 for reading in body.readings]
+    return math.floor(sum(wax_weights) / len(wax_weights) + 0.5) if wax_weights else 0
+
+
+def _save_scale_ticket_ui(item: OrderItem, body: ScaleTicketUIInput, ticket: Optional[ScaleTicket] = None):
+    average_weight = _validate_scale_ticket_ui(body)
+    if ticket is None:
+        ticket = ScaleTicket(
+            item_code=item.item_code,
+            order_number=item.order_number,
+            customer_name=item.customer_name,
+            description=item.description,
+        )
+    ticket.spout_count = body.spout_count
+    ticket.cup_min_g = body.cup_min
+    ticket.cup_max_g = body.cup_max
+    ticket.pour1_min_g = body.pour1_min
+    ticket.pour1_max_g = body.pour1_max
+    ticket.pour2_min_g = body.pour2_min
+    ticket.pour2_max_g = body.pour2_max
+    ticket.readings_json = json.dumps(
+        {
+            "mode": body.mode or "hypothetical",
+            "readings": [
+                reading.model_dump() if hasattr(reading, "model_dump") else reading.dict()
+                for reading in body.readings
+            ],
+        },
+        ensure_ascii=False,
+    )
+    ticket.average_wax_weight_g = average_weight
+    ticket.notes = body.notes
+    return ticket
+
+
+@app.get("/api/orders/{item_id}/scale-tickets", response_model=List[ScaleTicketUIOut])
+def list_order_scale_tickets(item_id: int, db: Session = Depends(get_db)):
+    item = db.query(OrderItem).filter(OrderItem.id == item_id).first()
+    if not item:
+        raise HTTPException(404, "Order item not found")
+    tickets = (
+        db.query(ScaleTicket)
+        .filter(
+            ScaleTicket.item_code == item.item_code,
+            ScaleTicket.order_number == item.order_number,
+        )
+        .order_by(ScaleTicket.created_at.desc(), ScaleTicket.id.desc())
+        .all()
+    )
+    return [_scale_ticket_ui_response(ticket) for ticket in tickets]
+
+
+@app.post("/api/orders/{item_id}/scale-tickets", response_model=ScaleTicketUIOut)
+def create_order_scale_ticket(
+    item_id: int,
+    body: ScaleTicketUIInput,
+    db: Session = Depends(get_db),
+    user: str = Depends(get_current_user),
+):
+    item = db.query(OrderItem).filter(OrderItem.id == item_id).first()
+    if not item:
+        raise HTTPException(404, "Order item not found")
+    ticket = _save_scale_ticket_ui(item, body)
+    db.add(ticket)
+    db.commit()
+    db.refresh(ticket)
+    return _scale_ticket_ui_response(ticket)
+
+
+@app.put("/api/orders/{item_id}/scale-tickets/{ticket_id}", response_model=ScaleTicketUIOut)
+def update_order_scale_ticket(
+    item_id: int,
+    ticket_id: int,
+    body: ScaleTicketUIInput,
+    db: Session = Depends(get_db),
+    user: str = Depends(get_current_user),
+):
+    if body.mode != "actual":
+        raise HTTPException(400, "Only actual weighing tickets can be edited")
+    item = db.query(OrderItem).filter(OrderItem.id == item_id).first()
+    if not item:
+        raise HTTPException(404, "Order item not found")
+    ticket = (
+        db.query(ScaleTicket)
+        .filter(
+            ScaleTicket.id == ticket_id,
+            ScaleTicket.item_code == item.item_code,
+            ScaleTicket.order_number == item.order_number,
+        )
+        .first()
+    )
+    if not ticket:
+        raise HTTPException(404, "Scale ticket not found")
+    _save_scale_ticket_ui(item, body, ticket)
+    db.commit()
+    db.refresh(ticket)
+    return _scale_ticket_ui_response(ticket)
+
+
 @app.put("/api/orders/{item_id}", response_model=OrderItemOut)
 def update_item(
     item_id: int,
@@ -765,6 +1013,36 @@ def delete_scale_ticket(
     return {"deleted": ticket_id}
 
 
+def _scale_ticket_backup(ticket: ScaleTicket) -> dict:
+    readings, mode = _scale_ticket_readings(ticket)
+    return {
+        "item_code": ticket.item_code,
+        "order_number": ticket.order_number,
+        "customer_name": ticket.customer_name,
+        "description": ticket.description,
+        "spout_count": ticket.spout_count,
+        "cup_min_g": ticket.cup_min_g,
+        "cup_max_g": ticket.cup_max_g,
+        "pour1_min_g": ticket.pour1_min_g,
+        "pour1_max_g": ticket.pour1_max_g,
+        "pour2_min_g": ticket.pour2_min_g,
+        "pour2_max_g": ticket.pour2_max_g,
+        "readings": [
+            {
+                "spout": row["spout"],
+                "cup_weight_g": row.get("cup", row.get("cup_weight_g")),
+                "pour1_weight_g": row.get("pour1", row.get("pour1_weight_g")),
+                "pour2_weight_g": row.get("pour2", row.get("pour2_weight_g")),
+            }
+            for row in readings
+        ],
+        "average_wax_weight_g": _scale_ticket_average(ticket, readings, mode),
+        "mode": mode,
+        "notes": ticket.notes,
+        "created_at": ticket.created_at.isoformat() if ticket.created_at else None,
+    }
+
+
 
 # ---------- Backup / Restore ----------
 @app.get("/api/backup")
@@ -831,23 +1109,7 @@ def backup_database(
         "count": len(rows),
         "items": rows,
         "scale_tickets": [
-            {
-                "item_code": ticket.item_code,
-                "order_number": ticket.order_number,
-                "customer_name": ticket.customer_name,
-                "description": ticket.description,
-                "spout_count": ticket.spout_count,
-                "cup_min_g": ticket.cup_min_g,
-                "cup_max_g": ticket.cup_max_g,
-                "pour1_min_g": ticket.pour1_min_g,
-                "pour1_max_g": ticket.pour1_max_g,
-                "pour2_min_g": ticket.pour2_min_g,
-                "pour2_max_g": ticket.pour2_max_g,
-                "readings": json.loads(ticket.readings_json),
-                "average_wax_weight_g": ticket.average_wax_weight_g,
-                "notes": ticket.notes,
-                "created_at": ticket.created_at.isoformat() if ticket.created_at else None,
-            }
+            _scale_ticket_backup(ticket)
             for ticket in db.query(ScaleTicket).order_by(ScaleTicket.id).all()
         ],
     }
@@ -1009,38 +1271,70 @@ async def restore_database(
             errors += 1
             continue
         try:
-            ticket_data = ScaleTicketCreate(**row)
-            average_weight = _validate_scale_ticket(ticket_data)
-            item_query = db.query(OrderItem).filter(OrderItem.item_code == ticket_data.item_code)
-            if ticket_data.order_number:
-                item_query = item_query.filter(OrderItem.order_number == ticket_data.order_number)
+            ticket_mode = row.get("mode", "hypothetical")
+            if ticket_mode == "actual":
+                item_code = str(row.get("item_code") or "").strip()
+                ticket_order_number = row.get("order_number")
+                ticket_data = ScaleTicketUIInput(
+                    mode="actual",
+                    spout_count=row.get("spout_count"),
+                    cup_min=row.get("cup_min", row.get("cup_min_g")),
+                    cup_max=row.get("cup_max", row.get("cup_max_g")),
+                    pour1_min=row.get("pour1_min", row.get("pour1_min_g")),
+                    pour1_max=row.get("pour1_max", row.get("pour1_max_g")),
+                    pour2_min=row.get("pour2_min", row.get("pour2_min_g")),
+                    pour2_max=row.get("pour2_max", row.get("pour2_max_g")),
+                    readings=[
+                        {
+                            "spout": reading["spout"],
+                            "cup": reading.get("cup", reading.get("cup_weight_g")),
+                            "pour1": reading.get("pour1", reading.get("pour1_weight_g")),
+                            "pour2": reading.get("pour2", reading.get("pour2_weight_g")),
+                        }
+                        for reading in row.get("readings", [])
+                    ],
+                    notes=row.get("notes"),
+                )
+            else:
+                ticket_data = ScaleTicketCreate(**row)
+                item_code = ticket_data.item_code
+                ticket_order_number = ticket_data.order_number
+                average_weight = _validate_scale_ticket(ticket_data)
+            item_query = db.query(OrderItem).filter(OrderItem.item_code == item_code)
+            if ticket_order_number:
+                item_query = item_query.filter(OrderItem.order_number == ticket_order_number)
             item = item_query.first()
             if not item:
                 errors += 1
                 continue
-            ticket = ScaleTicket(
-                item_code=item.item_code,
-                order_number=row.get("order_number"),
-                customer_name=row.get("customer_name"),
-                description=row.get("description"),
-                spout_count=ticket_data.spout_count,
-                cup_min_g=ticket_data.cup_min_g,
-                cup_max_g=ticket_data.cup_max_g,
-                pour1_min_g=ticket_data.pour1_min_g,
-                pour1_max_g=ticket_data.pour1_max_g,
-                pour2_min_g=ticket_data.pour2_min_g,
-                pour2_max_g=ticket_data.pour2_max_g,
-                readings_json=json.dumps(
-                    [reading.model_dump() if hasattr(reading, "model_dump") else reading.dict() for reading in ticket_data.readings],
-                    ensure_ascii=False,
+            if ticket_mode == "actual":
+                ticket = _save_scale_ticket_ui(item, ticket_data)
+            else:
+                ticket = ScaleTicket(
+                    item_code=item.item_code,
+                    order_number=row.get("order_number"),
+                    customer_name=row.get("customer_name"),
+                    description=row.get("description"),
+                    spout_count=ticket_data.spout_count,
+                    cup_min_g=ticket_data.cup_min_g,
+                    cup_max_g=ticket_data.cup_max_g,
+                    pour1_min_g=ticket_data.pour1_min_g,
+                    pour1_max_g=ticket_data.pour1_max_g,
+                    pour2_min_g=ticket_data.pour2_min_g,
+                    pour2_max_g=ticket_data.pour2_max_g,
+                    readings_json=json.dumps(
+                        [reading.model_dump() if hasattr(reading, "model_dump") else reading.dict() for reading in ticket_data.readings],
+                        ensure_ascii=False,
+                    ),
+                    average_wax_weight_g=average_weight,
+                    notes=ticket_data.notes,
                 ),
-                average_wax_weight_g=average_weight,
-                notes=ticket_data.notes,
-                created_at=_dt(row.get("created_at")) or datetime.utcnow(),
-            )
+            ticket.customer_name = row.get("customer_name") or item.customer_name
+            ticket.description = row.get("description") or item.description
+            ticket.created_at = _dt(row.get("created_at")) or datetime.utcnow()
             db.add(ticket)
             restored_tickets += 1
-        except (ValidationError, ValueError):
+        except (HTTPException, ValidationError, ValueError, TypeError, KeyError):
             errors += 1
 
     try:
