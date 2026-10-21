@@ -1240,6 +1240,7 @@
           <button type="button" class="btn btn-ghost auth-only" id="editBtn" style="display:none;font-size:0.85rem;">Edit</button>
           <button type="button" class="btn btn-danger auth-only" id="deleteItemBtn" style="display:none;font-size:0.85rem;padding:0.35rem 0.7rem;">Delete</button>
           <button type="button" class="btn btn-primary" id="scaleTicketBtn" style="display:none;font-size:0.85rem;">Tạo phiếu cân giả định</button>
+          <button type="button" class="btn btn-primary" id="realScaleTicketBtn" style="display:none;font-size:0.85rem;">Tạo phiếu cân thật</button>
           <button class="btn btn-ghost" id="modalClose">✕</button>
         </div>
       </div>
@@ -1329,6 +1330,8 @@
     let authUser = localStorage.getItem("order_user") || "";
     let currentDetailId = null;
     let currentScaleTicket = null;
+    let currentScaleTicketId = null;
+    let scaleTicketHistory = [];
     let editMode = false;
 
     const EDITABLE_FIELDS = [
@@ -2023,7 +2026,10 @@ document.getElementById("searchInput").placeholder = t("search");
         }
         currentDetailId = null;
         currentScaleTicket = null;
+        currentScaleTicketId = null;
+        scaleTicketHistory = [];
         document.getElementById("scaleTicketBtn").style.display = "none";
+        document.getElementById("realScaleTicketBtn").style.display = "none";
         document.getElementById("scaleTicket").innerHTML = "";
         document.getElementById("scaleHistory").innerHTML = "";
         document.getElementById("modalTitle").textContent = `${orderNumber} · ${items.length} mã`;
@@ -2090,7 +2096,10 @@ document.getElementById("searchInput").placeholder = t("search");
       currentDetailId = id;
       editMode = false;
       currentScaleTicket = null;
+      currentScaleTicketId = null;
+      scaleTicketHistory = [];
       document.getElementById("scaleTicketBtn").style.display = "";
+      document.getElementById("realScaleTicketBtn").style.display = "";
       document.getElementById("scaleTicket").innerHTML = "";
       document.getElementById("scaleHistory").innerHTML = "";
       const code = o.item_code || "—";
@@ -2205,6 +2214,8 @@ document.getElementById("searchInput").placeholder = t("search");
 
     function createScaleTicket() {
       if (currentDetailId == null || editMode) return;
+      currentScaleTicket = null;
+      currentScaleTicketId = null;
       const label = (vi, en, zh) => lang === "zh" ? zh : lang === "en" ? en : vi;
       const ticket = document.getElementById("scaleTicket");
       const currentItem = orders.find(item => item.id === currentDetailId);
@@ -2268,7 +2279,7 @@ document.getElementById("searchInput").placeholder = t("search");
               ["scalePour2", label("Rót lần 2", "Pour 2", "第二次灌装"), ranges.pour2],
             ].map(([id, title, range]) => `<label style="display:inline-flex;align-items:center;gap:0.3rem;margin:0;font-size:0.85rem;">${title}<input id="${id}Min" class="search-box" type="number" step="1" value="${range[0]}" aria-label="${title} ${label("từ", "minimum", "最小值")}" style="width:75px;padding:0.4rem;" /><span>–</span><input id="${id}Max" class="search-box" type="number" step="1" value="${range[1]}" aria-label="${title} ${label("đến", "maximum", "最大值")}" style="width:75px;padding:0.4rem;" /></label>`).join("")}
             <button type="button" class="btn btn-primary" id="scaleRandomizeBtn" style="font-size:0.85rem;">${label("Tạo ngẫu nhiên", "Generate random", "随机生成")}</button>
-            <button type="button" class="btn btn-ghost auth-only" id="scaleSaveBtn" style="font-size:0.85rem;display:${isLoggedIn() ? "" : "none"};">${label("Lưu phiếu cân", "Save ticket", "保存称重单")}</button>
+            <button type="button" class="btn btn-ghost" id="scaleSaveBtn" style="font-size:0.85rem;">${label("Lưu phiếu cân", "Save ticket", "保存称重单")}</button>
           </div>
           <div style="overflow:auto;border:1px solid #e2e8f0;border-radius:8px;background:#fff;">
             <table style="width:100%;border-collapse:collapse;font-size:0.9rem;min-width:${260 + spoutCount * 56}px;">
@@ -2287,64 +2298,197 @@ document.getElementById("searchInput").placeholder = t("search");
 
     document.getElementById("scaleTicketBtn").addEventListener("click", createScaleTicket);
 
+    function createRealScaleTicket(existingTicket = null) {
+      if (currentDetailId == null || editMode) return;
+      currentScaleTicket = null;
+      currentScaleTicketId = existingTicket?.id ?? null;
+      const label = (vi, en, zh) => lang === "zh" ? zh : lang === "en" ? en : vi;
+      const ticket = document.getElementById("scaleTicket");
+      const initialReadings = existingTicket?.readings || [];
+      const count = existingTicket?.spout_count || 12;
+      const saveLabel = existingTicket
+        ? label("Lưu thay đổi", "Save changes", "保存修改")
+        : label("Lưu phiếu cân", "Save ticket", "保存称重单");
+      ticket.innerHTML = `
+        <section class="detail-section" style="margin-bottom:1.25rem;">
+          <div class="detail-section-title"><span class="icon">⚖️</span> ${label("Phiếu cân thực tế", "Actual weighing ticket", "实际称重单")}</div>
+          <div style="display:flex;flex-wrap:wrap;align-items:end;gap:0.65rem 1rem;margin-bottom:0.85rem;">
+            <label style="display:inline-flex;align-items:center;gap:0.5rem;margin:0;font-size:0.85rem;">${label("Số vòi rót", "Number of spouts", "灌装头数量")} <input id="realScaleSpoutCount" class="search-box" type="number" min="1" max="100" step="1" value="${count}" style="width:80px;padding:0.4rem;" /></label>
+            <button type="button" class="btn btn-ghost" id="realScaleBuildBtn" style="font-size:0.85rem;">${label("Tạo bảng nhập", "Create input table", "创建录入表")}</button>
+            <button type="button" class="btn btn-primary" id="scaleSaveBtn" style="font-size:0.85rem;">${saveLabel}</button>
+            <button type="button" class="btn btn-ghost" id="scaleExportBtn" style="font-size:0.85rem;">${label("Xuất Excel", "Export Excel", "导出 Excel")}</button>
+          </div>
+          <div id="realScaleTable" style="overflow:auto;border:1px solid #e2e8f0;border-radius:8px;background:#fff;"></div>
+          <div id="realScaleMessage" style="margin-top:0.45rem;color:var(--muted);font-size:0.8rem;">${label("Nhập số cân thực tế theo từng vòi. Trọng lượng sáp = rót lần cuối − vỏ cốc; trọng lượng trung bình được tính tự động.", "Enter actual readings for each spout. Wax weight = final pour − cup tare; average weight is calculated automatically.", "按灌装头录入实际称重。蜡重 = 最后灌装 − 杯重；平均重量自动计算。")}</div>
+        </section>`;
+
+      const buildTable = () => {
+        currentScaleTicket = null;
+        const requestedCount = Number(ticket.querySelector("#realScaleSpoutCount").value);
+        if (!Number.isInteger(requestedCount) || requestedCount < 1 || requestedCount > 100) {
+          showToast(label("Số vòi rót phải từ 1 đến 100.", "Spout count must be between 1 and 100.", "灌装头数量必须在 1 到 100 之间。"), "error");
+          return false;
+        }
+        currentScaleTicket = null;
+        const headers = Array.from({ length: requestedCount }, (_, index) => `<th scope="col" style="padding:0.65rem;text-align:center;min-width:75px;">${index + 1}</th>`).join("");
+        const inputRow = (key, title) => `<tr><th scope="row" style="padding:0.65rem;text-align:left;min-width:210px;font-weight:500;">${title}</th>${Array.from({ length: requestedCount }, (_, index) => `<td style="padding:0.35rem;text-align:center;"><input class="search-box real-scale-input" data-field="${key}" data-spout="${index + 1}" type="number" min="0" step="1" aria-label="${title} ${index + 1}" style="box-sizing:border-box;flex:none;min-width:0;width:4em;padding:0.25rem;" /></td>`).join("")}</tr>`;
+        ticket.querySelector("#realScaleTable").innerHTML = `
+          <table style="width:100%;border-collapse:collapse;font-size:0.9rem;min-width:${260 + requestedCount * 75}px;">
+            <thead><tr style="background:#f8fafc;"><th scope="col" style="padding:0.65rem;text-align:left;min-width:210px;">${label("(序号) STT", "No.", "序号")}</th>${headers}</tr></thead>
+            <tbody>
+              ${inputRow("cup", label("Vỏ cốc", "Cup tare", "杯重"))}
+              <tr><th scope="row" style="padding:0.3rem 0.65rem;text-align:left;font-size:0.75rem;font-weight:400;color:var(--muted);">${label("Sáp lần 1 (rót 1 − vỏ cốc)", "Pour 1 wax (first pour − cup)", "第一次蜡重（第一次灌装 − 杯重）")}</th>${Array.from({ length: requestedCount }, (_, index) => `<td id="realPour1Wax${index + 1}" style="padding:0.3rem;text-align:center;font-size:0.75rem;color:var(--muted);">—</td>`).join("")}</tr>
+              ${inputRow("pour1", label("Rót lần đầu (bao gồm cốc và sáp)", "First pour (cup and wax)", "第一次灌装（含杯和蜡）"))}
+              <tr><th scope="row" style="padding:0.3rem 0.65rem;text-align:left;font-size:0.75rem;font-weight:400;color:var(--muted);">${label("Sáp rót thêm (rót cuối − rót lần 1)", "Additional wax (final pour − first pour)", "追加蜡重（最后灌装 − 第一次灌装）")}</th>${Array.from({ length: requestedCount }, (_, index) => `<td id="realPour2Wax${index + 1}" style="padding:0.3rem;text-align:center;font-size:0.75rem;color:var(--muted);">—</td>`).join("")}</tr>
+              ${inputRow("pour2", label("Rót lần cuối (bao gồm cốc và sáp)", "Final pour (cup and wax)", "最后一次灌装（含杯和蜡）"))}
+              <tr><th scope="row" style="padding:0.65rem;text-align:left;font-weight:500;">${label("Trọng lượng sáp nến", "Candle wax weight", "蜡烛蜡重")}</th>${Array.from({ length: requestedCount }, (_, index) => `<td id="realWaxWeight${index + 1}" style="padding:0.65rem;text-align:center;">—</td>`).join("")}</tr>
+              <tr><th scope="row" style="padding:0.65rem;text-align:left;font-weight:500;">${label("Trọng lượng trung bình", "Average weight", "平均重量")}</th><td id="realScaleAverage" colspan="${requestedCount}" style="padding:0.65rem;text-align:center;font-weight:700;">—</td></tr>
+            </tbody>
+          </table>`;
+        for (const reading of initialReadings) {
+          for (const field of ["cup", "pour1", "pour2"]) {
+            const input = ticket.querySelector(`[data-field="${field}"][data-spout="${reading.spout}"]`);
+            if (input && reading[field] != null) input.value = reading[field];
+          }
+        }
+        ticket.querySelectorAll(".real-scale-input").forEach(input => input.addEventListener("input", updateTicket));
+        return true;
+      };
+
+      const updateTicket = () => {
+        const message = ticket.querySelector("#realScaleMessage");
+        const spoutCount = Number(ticket.querySelector("#realScaleSpoutCount").value);
+        const invalidate = text => {
+          message.textContent = text;
+          ticket.querySelectorAll('[id^="realPour1Wax"], [id^="realPour2Wax"], [id^="realWaxWeight"]').forEach(cell => { cell.textContent = "—"; });
+          ticket.querySelector("#realScaleAverage").textContent = "—";
+          currentScaleTicket = null;
+        };
+        const readings = [];
+        for (let spout = 1; spout <= spoutCount; spout++) {
+          const values = {};
+          for (const field of ["cup", "pour1", "pour2"]) {
+            const raw = ticket.querySelector(`[data-field="${field}"][data-spout="${spout}"]`)?.value;
+            values[field] = raw === undefined || raw.trim() === "" ? null : Number(raw);
+            if (values[field] !== null && (!Number.isInteger(values[field]) || values[field] < 0)) {
+              invalidate(label("Số cân phải là số nguyên không âm.", "Readings must be non-negative whole numbers.", "称重数据必须为非负整数。"));
+              return;
+            }
+          }
+          if ((values.cup !== null && values.pour1 !== null && values.pour1 < values.cup)
+            || (values.pour1 !== null && values.pour2 !== null && values.pour2 < values.pour1)
+            || (values.cup !== null && values.pour2 !== null && values.pour2 < values.cup)) {
+            invalidate(label("Rót lần đầu phải lớn hơn hoặc bằng vỏ cốc; rót lần cuối phải lớn hơn hoặc bằng rót lần đầu.", "First pour must be at least the cup tare, and final pour must be at least the first pour.", "第一次灌装必须大于或等于杯重；最后灌装必须大于或等于第一次灌装。"));
+            return;
+          }
+          readings.push({ spout, ...values });
+          if (values.cup !== null && values.pour1 !== null) {
+            ticket.querySelector(`#realPour1Wax${spout}`).textContent = values.pour1 - values.cup;
+          }
+          if (values.pour1 !== null && values.pour2 !== null) {
+            ticket.querySelector(`#realPour2Wax${spout}`).textContent = values.pour2 - values.pour1;
+          }
+          if (values.cup !== null && values.pour2 !== null) {
+            ticket.querySelector(`#realWaxWeight${spout}`).textContent = values.pour2 - values.cup;
+          }
+        }
+        const waxWeights = readings
+          .filter(row => row.cup !== null && row.pour2 !== null)
+          .map(row => row.pour2 - row.cup);
+        const average = waxWeights.length
+          ? Math.round(waxWeights.reduce((sum, value) => sum + value, 0) / waxWeights.length)
+          : null;
+        ticket.querySelector("#realScaleAverage").textContent = average ?? "—";
+        const range = field => {
+          const values = readings.map(row => row[field]).filter(value => value !== null);
+          return values.length ? [Math.min(...values), Math.max(...values)] : [0, 0];
+        };
+        const [cupMin, cupMax] = range("cup");
+        const [pour1Min, pour1Max] = range("pour1");
+        const [pour2Min, pour2Max] = range("pour2");
+        currentScaleTicket = {
+          mode: "actual",
+          spout_count: spoutCount,
+          cup_min: cupMin,
+          cup_max: cupMax,
+          pour1_min: pour1Min,
+          pour1_max: pour1Max,
+          pour2_min: pour2Min,
+          pour2_max: pour2Max,
+          readings,
+        };
+        message.textContent = label("Có thể lưu phiếu ngay cả khi chưa nhập đủ. Ô trống sẽ được giữ lại; trung bình chỉ tính các vòi đã có vỏ cốc và rót lần cuối.", "You can save the ticket before all readings are entered. Blank fields are kept empty; the average uses spouts with both cup tare and final pour.", "即使未填写完整也可以保存。空白数据会保留为空；平均重量仅计算已填写杯重和最后灌装的灌装头。");
+      };
+
+      const rebuildTable = () => {
+        if (buildTable()) updateTicket();
+      };
+      ticket.querySelector("#realScaleBuildBtn").addEventListener("click", rebuildTable);
+      ticket.querySelector("#realScaleSpoutCount").addEventListener("change", rebuildTable);
+      ticket.querySelector("#scaleSaveBtn").addEventListener("click", saveScaleTicket);
+      ticket.querySelector("#scaleExportBtn").addEventListener("click", exportScaleTicket);
+      buildTable();
+      updateTicket();
+    }
+
+    document.getElementById("realScaleTicketBtn").addEventListener("click", createRealScaleTicket);
+
     async function loadScaleTicketHistory(itemId) {
       const history = document.getElementById("scaleHistory");
       history.innerHTML = "";
-      const item = orders.find(row => row.id === itemId);
-      if (!item?.item_code) return;
       try {
-        const params = new URLSearchParams();
-        if (item.order_number) params.set("order_number", item.order_number);
-        const query = params.toString();
-        const res = await fetch(`/api/scale-tickets/${encodeURIComponent(item.item_code)}${query ? `?${query}` : ""}`);
+        const res = await fetch(`/api/orders/${itemId}/scale-tickets`);
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || "Could not load weighing records");
         if (currentDetailId !== itemId) return;
+        scaleTicketHistory = data;
         const label = (vi, en, zh) => lang === "zh" ? zh : lang === "en" ? en : vi;
-        const code = item.item_code || "—";
+        const items = orders.find(item => item.id === itemId);
+        const code = items?.item_code || "—";
         if (!data.length) {
           history.innerHTML = `<section class="detail-section"><div class="detail-section-title"><span class="icon">⚖️</span> ${label("Bảng cân mã hàng", "Item weighing table", "货号称重表")} · ${esc(code)}</div><div style="color:var(--muted);font-size:0.85rem;">${label("Chưa có phiếu cân đã lưu.", "No saved weighing tickets.", "暂无已保存的称重单。")}</div></section>`;
           return;
         }
         const rows = data.map(ticket => {
+          const isActual = ticket.mode === "actual";
           const readings = Array.isArray(ticket.readings) ? ticket.readings : [];
           const details = readings.map(row => `
             <tr>
               <td style="padding:0.45rem;text-align:center;">${row.spout}</td>
-              <td style="padding:0.45rem;text-align:center;">${row.cup_weight_g}</td>
-              <td style="padding:0.45rem;text-align:center;">${row.pour1_weight_g}</td>
-              <td style="padding:0.45rem;text-align:center;">${row.pour2_weight_g}</td>
-              <td style="padding:0.45rem;text-align:center;">${row.pour1_weight_g + row.pour2_weight_g}</td>
-              <td style="padding:0.45rem;text-align:center;">${row.cup_weight_g + row.pour1_weight_g + row.pour2_weight_g}</td>
+              <td style="padding:0.45rem;text-align:center;">${row.cup ?? "—"}</td>
+              <td style="padding:0.45rem;text-align:center;">${row.pour1 ?? "—"}</td>
+              <td style="padding:0.45rem;text-align:center;">${row.pour2 ?? "—"}</td>
+              <td style="padding:0.45rem;text-align:center;">${isActual ? row.cup != null && row.pour2 != null ? row.pour2 - row.cup : "—" : row.pour1 + row.pour2}</td>
             </tr>`).join("");
           const created = ticket.created_at ? new Date(ticket.created_at).toLocaleString() : "—";
           return `<tr>
             <td style="padding:0.65rem;">${esc(created)}</td>
-            <td style="padding:0.65rem;">${ticket.cup_min_g}–${ticket.cup_max_g} g</td>
-            <td style="padding:0.65rem;">${ticket.pour1_min_g}–${ticket.pour1_max_g} g</td>
-            <td style="padding:0.65rem;">${ticket.pour2_min_g}–${ticket.pour2_max_g} g</td>
+            <td style="padding:0.65rem;">${isActual ? label("Thực tế", "Actual", "实际") : label("Giả định", "Hypothetical", "模拟")}</td>
+            <td style="padding:0.65rem;">${ticket.cup_min == null ? "—" : `${ticket.cup_min}–${ticket.cup_max} g`}</td>
+            <td style="padding:0.65rem;">${ticket.pour1_min == null ? "—" : `${ticket.pour1_min}–${ticket.pour1_max} g`}</td>
+            <td style="padding:0.65rem;">${ticket.pour2_min == null ? "—" : `${ticket.pour2_min}–${ticket.pour2_max} g`}</td>
             <td style="padding:0.65rem;text-align:center;">${ticket.spout_count}</td>
-            <td style="padding:0.65rem;text-align:center;">${ticket.average_wax_weight_g} g</td>
+            <td style="padding:0.65rem;text-align:center;">${ticket.average_wax_weight_g == null ? "—" : `${ticket.average_wax_weight_g} g`}</td>
             <td style="padding:0.65rem;"><details><summary style="cursor:pointer;">${label("Xem số cân", "Readings", "查看称重数据")}</summary>
               <div style="overflow:auto;margin-top:0.5rem;"><table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
                 <thead><tr style="background:#f8fafc;">
                   <th style="padding:0.45rem;">${label("Vòi", "Spout", "灌装头")}</th>
                   <th style="padding:0.45rem;">${label("Vỏ cốc", "Cup tare", "杯重")} (g)</th>
-                  <th style="padding:0.45rem;">${label("Rót 1", "Pour 1", "灌装1")} (g)</th>
-                  <th style="padding:0.45rem;">${label("Rót 2", "Pour 2", "灌装2")} (g)</th>
+                  <th style="padding:0.45rem;">${isActual ? label("Rót lần đầu (gồm cốc và sáp)", "First pour (cup and wax)", "第一次灌装（含杯和蜡）") : label("Rót 1", "Pour 1", "灌装1")} (g)</th>
+                  <th style="padding:0.45rem;">${isActual ? label("Rót lần cuối (gồm cốc và sáp)", "Final pour (cup and wax)", "最后灌装（含杯和蜡）") : label("Rót 2", "Pour 2", "灌装2")} (g)</th>
                   <th style="padding:0.45rem;">${label("Tổng sáp", "Wax total", "蜡重")} (g)</th>
-                  <th style="padding:0.45rem;">${label("Tổng cốc + sáp", "Cup + wax total", "杯子+蜡总重")} (g)</th>
                 </tr></thead><tbody>${details}</tbody>
               </table></div>
-            </details></td>
+            </details>${isActual ? `<button type="button" class="btn btn-ghost auth-only" data-edit-scale-ticket="${ticket.id}" style="font-size:0.8rem;margin-top:0.45rem;">${label("Sửa / nhập tiếp", "Edit / continue", "编辑 / 继续录入")}</button>` : ""}</td>
           </tr>`;
         }).join("");
         history.innerHTML = `<section class="detail-section">
           <div class="detail-section-title"><span class="icon">⚖️</span> ${label("Bảng cân mã hàng", "Item weighing table", "货号称重表")} · ${esc(code)}</div>
           <div style="overflow:auto;border:1px solid #e2e8f0;border-radius:8px;background:#fff;">
-            <table style="width:100%;border-collapse:collapse;font-size:0.85rem;min-width:760px;">
+            <table style="width:100%;border-collapse:collapse;font-size:0.85rem;min-width:840px;">
               <thead><tr style="background:#f8fafc;">
                 <th style="padding:0.65rem;text-align:left;">${label("Thời gian", "Created", "时间")}</th>
+                <th style="padding:0.65rem;text-align:left;">${label("Loại phiếu", "Ticket type", "单据类型")}</th>
                 <th style="padding:0.65rem;text-align:left;">${label("Vỏ cốc", "Cup tare", "杯重")} (${label("từ–đến", "range", "范围")})</th>
                 <th style="padding:0.65rem;text-align:left;">${label("Rót lần 1", "Pour 1", "灌装1")} (${label("từ–đến", "range", "范围")})</th>
                 <th style="padding:0.65rem;text-align:left;">${label("Rót lần 2", "Pour 2", "灌装2")} (${label("từ–đến", "range", "范围")})</th>
@@ -2355,6 +2499,14 @@ document.getElementById("searchInput").placeholder = t("search");
             </table>
           </div>
         </section>`;
+        applyAuthUI();
+        history.querySelectorAll("[data-edit-scale-ticket]").forEach(button => {
+          button.addEventListener("click", () => {
+            const ticketId = Number(button.dataset.editScaleTicket);
+            const savedTicket = scaleTicketHistory.find(ticket => ticket.id === ticketId);
+            if (savedTicket) createRealScaleTicket(savedTicket);
+          });
+        });
       } catch (error) {
         if (currentDetailId === itemId) {
           history.innerHTML = `<p style="color:var(--danger);font-size:0.85rem;">${esc(error.message || "Could not load weighing records")}</p>`;
@@ -2363,45 +2515,72 @@ document.getElementById("searchInput").placeholder = t("search");
     }
 
     async function saveScaleTicket() {
-      if (currentDetailId == null || !currentScaleTicket) return;
-      const itemId = currentDetailId;
-      const ticketData = currentScaleTicket;
-      const item = orders.find(row => row.id === itemId);
+      if (currentDetailId == null) return;
       const label = (vi, en, zh) => lang === "zh" ? zh : lang === "en" ? en : vi;
-      const button = document.getElementById("scaleSaveBtn");
-      if (!item?.item_code) {
-        showToast(label("Không tìm thấy mã hàng để lưu phiếu cân.", "Could not find the item code for this ticket.", "找不到此称重单的货号。"), "error");
+      if (!currentScaleTicket) return;
+      if (currentScaleTicket.mode === "actual" && !currentScaleTicket.readings.some(row =>
+        row.cup !== null || row.pour1 !== null || row.pour2 !== null
+      )) {
+        showToast(label("Nhập ít nhất một số cân trước khi lưu phiếu.", "Enter at least one reading before saving.", "保存前请至少填写一项称重数据。"), "error");
         return;
       }
+      const itemId = currentDetailId;
+      const ticketId = currentScaleTicketId;
+      const ticketData = currentScaleTicket;
+      const button = document.getElementById("scaleSaveBtn");
       button.disabled = true;
       try {
-        const res = await authFetch("/api/scale-tickets", {
-          method: "POST",
+        const ticketUrl = `/api/orders/${itemId}/scale-tickets${ticketId == null ? "" : `/${ticketId}`}`;
+        const res = await authFetch(ticketUrl, {
+          method: ticketId == null ? "POST" : "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            item_code: item.item_code,
-            order_number: item.order_number || null,
-            spout_count: ticketData.spout_count,
-            cup_min_g: ticketData.cup_min,
-            cup_max_g: ticketData.cup_max,
-            pour1_min_g: ticketData.pour1_min,
-            pour1_max_g: ticketData.pour1_max,
-            pour2_min_g: ticketData.pour2_min,
-            pour2_max_g: ticketData.pour2_max,
-            readings: ticketData.readings.map(row => ({
-              spout: row.spout,
-              cup_weight_g: row.cup,
-              pour1_weight_g: row.pour1,
-              pour2_weight_g: row.pour2,
-            })),
-          }),
+          body: JSON.stringify(ticketData),
         });
-        const data = await res.json().catch(() => ({}));
+        const data = await res.json();
         if (!res.ok) throw new Error(data.detail || "Could not save weighing ticket");
-        showToast(label("Đã lưu phiếu cân vào bảng của mã hàng.", "Weighing ticket saved to the item table.", "称重单已保存到货号称重表。"));
+        currentScaleTicketId = data.id;
+        if (ticketId == null) {
+          button.textContent = label("Lưu thay đổi", "Save changes", "保存修改");
+        }
+        showToast(ticketId == null
+          ? label("Đã lưu phiếu cân vào bảng của mã hàng.", "Weighing ticket saved to the item table.", "称重单已保存到货号称重表。")
+          : label("Đã cập nhật phiếu cân.", "Weighing ticket updated.", "称重单已更新。"));
         await loadScaleTicketHistory(itemId);
       } catch (error) {
         showToast(error.message || "Could not save weighing ticket", "error");
+      } finally {
+        if (button.isConnected) button.disabled = false;
+      }
+    }
+
+    async function exportScaleTicket() {
+      if (currentDetailId == null || !currentScaleTicket) return;
+      const label = (vi, en, zh) => lang === "zh" ? zh : lang === "en" ? en : vi;
+      const button = document.getElementById("scaleExportBtn");
+      const item = orders.find(order => order.id === currentDetailId);
+      button.disabled = true;
+      try {
+        const res = await authFetch(`/api/orders/${currentDetailId}/scale-tickets/export`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(currentScaleTicket),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.detail || "Could not export weighing ticket");
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        const safeCode = (item?.item_code || "scale-ticket").replace(/[^\w.-]+/g, "_");
+        link.href = url;
+        link.download = `phieu_can_${safeCode}.xlsx`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        showToast(error.message || label("Không thể xuất phiếu cân.", "Could not export weighing ticket.", "无法导出称重单。"), "error");
       } finally {
         if (button.isConnected) button.disabled = false;
       }
@@ -2413,6 +2592,7 @@ document.getElementById("searchInput").placeholder = t("search");
       if (!o) return;
       editMode = true;
       document.getElementById("scaleTicketBtn").style.display = "none";
+      document.getElementById("realScaleTicketBtn").style.display = "none";
       document.getElementById("scaleTicket").innerHTML = "";
       document.getElementById("detailGrid").style.display = "none";
       const form = document.getElementById("editForm");
