@@ -92,6 +92,27 @@ class OrderItem(Base):
     source_file = Column(String(300), nullable=True)
 
 
+class ScaleTicket(Base):
+    __tablename__ = "scale_tickets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    item_code = Column(String(100), nullable=False, index=True)
+    order_number = Column(String(100), nullable=True)
+    customer_name = Column(String(200), nullable=True)
+    description = Column(Text, nullable=True)
+    spout_count = Column(Integer, nullable=False)
+    cup_min_g = Column(Integer, nullable=False)
+    cup_max_g = Column(Integer, nullable=False)
+    pour1_min_g = Column(Integer, nullable=False)
+    pour1_max_g = Column(Integer, nullable=False)
+    pour2_min_g = Column(Integer, nullable=False)
+    pour2_max_g = Column(Integer, nullable=False)
+    readings_json = Column(Text, nullable=False)
+    average_wax_weight_g = Column(Float, nullable=False)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
     # Ensure product_image can hold base64 data-URIs (Supabase may still be VARCHAR(500))

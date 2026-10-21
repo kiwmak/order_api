@@ -7,6 +7,7 @@ Hệ thống quản lý đơn hàng nến (candle orders) — hỗ trợ import 
 - **Import Excel** (`.xlsx` / `.xls`) với header tiếng Trung
 - Lưu trữ SQLite
 - Giao diện web: upload, tìm kiếm, xem chi tiết
+- Tạo, lưu và xem lại phiếu cân giả định theo mã hàng (vỏ cốc, rót lần 1/lần 2, ghi chú)
 - Chuyển ngôn ngữ: VI / EN / 中文
 - REST API đầy đủ (Swagger tại `/docs`)
 
@@ -30,6 +31,9 @@ API docs: **http://localhost:8000/docs**
 | `GET`  | `/api/orders` | Danh sách đơn (query: `q`, `order_number`, `skip`, `limit`) |
 | `GET`  | `/api/orders/{id}` | Chi tiết 1 dòng |
 | `GET`  | `/api/orders/by-number/{order_number}` | Tất cả dòng theo số đơn |
+| `GET`  | `/api/scale-tickets/{item_code}` | Danh sách phiếu cân đã lưu theo mã hàng |
+| `POST` | `/api/scale-tickets` | Lưu phiếu cân (yêu cầu đăng nhập) |
+| `DELETE` | `/api/scale-tickets/{id}` | Xóa phiếu cân (yêu cầu đăng nhập) |
 | `DELETE` | `/api/orders` | Xóa toàn bộ |
 | `DELETE` | `/api/orders/{id}` | Xóa 1 dòng |
 | `GET`  | `/api/labels?lang=vi` | Nhãn trường theo ngôn ngữ |

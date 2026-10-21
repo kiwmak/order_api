@@ -8,6 +8,7 @@ Order Management Web API + UI
 import os
 import json
 import io
+import math
 import shutil
 import tempfile
 from typing import List, Optional, Any
@@ -20,9 +21,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, cast, String
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ValidationError
 
-from models import init_db, get_db, OrderItem, SessionLocal
+from models import init_db, get_db, OrderItem, ScaleTicket, SessionLocal
 from importer import parse_excel, rows_to_models
 from translations import FIELD_LABELS, UI_TEXT
 from auth import (
@@ -182,6 +183,90 @@ class OrderItemUpdate(BaseModel):
     outer_box_pack_rate: Optional[int] = None
     inner_box_barcode: Optional[str] = None
     retail_barcode: Optional[str] = None
+
+
+class ScaleTicketReading(BaseModel):
+    spout: int = Field(ge=1, le=100)
+    cup_weight_g: int = Field(ge=0)
+    pour1_weight_g: int = Field(ge=0)
+    pour2_weight_g: int = Field(ge=0)
+
+
+class ScaleTicketCreate(BaseModel):
+    item_code: str = Field(min_length=1, max_length=100)
+    order_number: Optional[str] = Field(None, max_length=100)
+    spout_count: int = Field(ge=1, le=100)
+    cup_min_g: int = Field(ge=0)
+    cup_max_g: int = Field(ge=0)
+    pour1_min_g: int = Field(ge=0)
+    pour1_max_g: int = Field(ge=0)
+    pour2_min_g: int = Field(ge=0)
+    pour2_max_g: int = Field(ge=0)
+    readings: List[ScaleTicketReading]
+    notes: Optional[str] = Field(None, max_length=2000)
+
+
+class ScaleTicketOut(BaseModel):
+    id: int
+    item_code: str
+    order_number: Optional[str] = None
+    customer_name: Optional[str] = None
+    description: Optional[str] = None
+    spout_count: int
+    cup_min_g: int
+    cup_max_g: int
+    pour1_min_g: int
+    pour1_max_g: int
+    pour2_min_g: int
+    pour2_max_g: int
+    readings: List[ScaleTicketReading]
+    average_wax_weight_g: int
+    notes: Optional[str] = None
+    created_at: datetime
+
+
+def _validate_scale_ticket(body: ScaleTicketCreate) -> int:
+    ranges = (
+        (body.cup_min_g, body.cup_max_g),
+        (body.pour1_min_g, body.pour1_max_g),
+        (body.pour2_min_g, body.pour2_max_g),
+    )
+    if any(minimum > maximum for minimum, maximum in ranges):
+        raise ValueError("Each minimum weight must be less than or equal to its maximum")
+    if len(body.readings) != body.spout_count:
+        raise ValueError("Reading count must match spout count")
+    for index, reading in enumerate(body.readings, start=1):
+        if reading.spout != index:
+            raise ValueError("Spout numbers must be consecutive and start at 1")
+        if not body.cup_min_g <= reading.cup_weight_g <= body.cup_max_g:
+            raise ValueError("Cup weight is outside the saved range")
+        if not body.pour1_min_g <= reading.pour1_weight_g <= body.pour1_max_g:
+            raise ValueError("Pour 1 weight is outside the saved range")
+        if not body.pour2_min_g <= reading.pour2_weight_g <= body.pour2_max_g:
+            raise ValueError("Pour 2 weight is outside the saved range")
+    wax_weights = [row.pour1_weight_g + row.pour2_weight_g for row in body.readings]
+    return math.floor(sum(wax_weights) / len(wax_weights) + 0.5)
+
+
+def _scale_ticket_response(ticket: ScaleTicket) -> ScaleTicketOut:
+    return ScaleTicketOut(
+        id=ticket.id,
+        item_code=ticket.item_code,
+        order_number=ticket.order_number,
+        customer_name=ticket.customer_name,
+        description=ticket.description,
+        spout_count=ticket.spout_count,
+        cup_min_g=ticket.cup_min_g,
+        cup_max_g=ticket.cup_max_g,
+        pour1_min_g=ticket.pour1_min_g,
+        pour1_max_g=ticket.pour1_max_g,
+        pour2_min_g=ticket.pour2_min_g,
+        pour2_max_g=ticket.pour2_max_g,
+        readings=json.loads(ticket.readings_json),
+        average_wax_weight_g=ticket.average_wax_weight_g,
+        notes=ticket.notes,
+        created_at=ticket.created_at,
+    )
 
 
 # ---------- Startup ----------
@@ -605,6 +690,76 @@ def update_item(
     return item
 
 
+@app.get("/api/scale-tickets/{item_code}", response_model=List[ScaleTicketOut])
+def list_scale_tickets(item_code: str, db: Session = Depends(get_db)):
+    tickets = (
+        db.query(ScaleTicket)
+        .filter(ScaleTicket.item_code == item_code)
+        .order_by(ScaleTicket.created_at.desc(), ScaleTicket.id.desc())
+        .all()
+    )
+    return [_scale_ticket_response(ticket) for ticket in tickets]
+
+
+@app.post("/api/scale-tickets", response_model=ScaleTicketOut)
+def create_scale_ticket(
+    body: ScaleTicketCreate,
+    db: Session = Depends(get_db),
+    user: str = Depends(get_current_user),
+):
+    item_code = body.item_code.strip()
+    if not item_code:
+        raise HTTPException(400, "Item code is required")
+    item_query = db.query(OrderItem).filter(OrderItem.item_code == item_code)
+    if body.order_number:
+        item_query = item_query.filter(OrderItem.order_number == body.order_number)
+    item = item_query.order_by(OrderItem.id.desc()).first()
+    if not item:
+        raise HTTPException(404, "Product code not found")
+    try:
+        average_weight = _validate_scale_ticket(body)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    ticket = ScaleTicket(
+        item_code=item.item_code,
+        order_number=item.order_number,
+        customer_name=item.customer_name,
+        description=item.description,
+        spout_count=body.spout_count,
+        cup_min_g=body.cup_min_g,
+        cup_max_g=body.cup_max_g,
+        pour1_min_g=body.pour1_min_g,
+        pour1_max_g=body.pour1_max_g,
+        pour2_min_g=body.pour2_min_g,
+        pour2_max_g=body.pour2_max_g,
+        readings_json=json.dumps(
+            [reading.model_dump() if hasattr(reading, "model_dump") else reading.dict() for reading in body.readings],
+            ensure_ascii=False,
+        ),
+        average_wax_weight_g=average_weight,
+        notes=body.notes,
+    )
+    db.add(ticket)
+    db.commit()
+    db.refresh(ticket)
+    return _scale_ticket_response(ticket)
+
+
+@app.delete("/api/scale-tickets/{ticket_id}")
+def delete_scale_ticket(
+    ticket_id: int,
+    db: Session = Depends(get_db),
+    user: str = Depends(get_current_user),
+):
+    ticket = db.query(ScaleTicket).filter(ScaleTicket.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(404, "Scale ticket not found")
+    db.delete(ticket)
+    db.commit()
+    return {"deleted": ticket_id}
+
+
 
 # ---------- Backup / Restore ----------
 @app.get("/api/backup")
@@ -670,6 +825,26 @@ def backup_database(
         "exported_by": user,
         "count": len(rows),
         "items": rows,
+        "scale_tickets": [
+            {
+                "item_code": ticket.item_code,
+                "order_number": ticket.order_number,
+                "customer_name": ticket.customer_name,
+                "description": ticket.description,
+                "spout_count": ticket.spout_count,
+                "cup_min_g": ticket.cup_min_g,
+                "cup_max_g": ticket.cup_max_g,
+                "pour1_min_g": ticket.pour1_min_g,
+                "pour1_max_g": ticket.pour1_max_g,
+                "pour2_min_g": ticket.pour2_min_g,
+                "pour2_max_g": ticket.pour2_max_g,
+                "readings": json.loads(ticket.readings_json),
+                "average_wax_weight_g": ticket.average_wax_weight_g,
+                "notes": ticket.notes,
+                "created_at": ticket.created_at.isoformat() if ticket.created_at else None,
+            }
+            for ticket in db.query(ScaleTicket).order_by(ScaleTicket.id).all()
+        ],
     }
     body = json.dumps(payload, ensure_ascii=False, indent=2)
     filename = f"order_backup_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
@@ -701,6 +876,9 @@ async def restore_database(
     items = data.get("items") if isinstance(data, dict) else data
     if not isinstance(items, list):
         raise HTTPException(400, "Backup must contain an items array")
+    scale_tickets = data.get("scale_tickets", []) if isinstance(data, dict) else []
+    if not isinstance(scale_tickets, list):
+        raise HTTPException(400, "Backup scale_tickets must be an array")
 
     mode = (mode or "replace").lower().strip()
     if mode not in ("replace", "merge"):
@@ -709,6 +887,7 @@ async def restore_database(
     deleted = 0
     if mode == "replace":
         deleted = db.query(OrderItem).delete()
+        db.query(ScaleTicket).delete()
         db.commit()
 
     inserted = 0
@@ -818,6 +997,47 @@ async def restore_database(
             errors += 1
             continue
 
+    db.flush()
+    restored_tickets = 0
+    for row in scale_tickets:
+        if not isinstance(row, dict):
+            errors += 1
+            continue
+        try:
+            ticket_data = ScaleTicketCreate(**row)
+            average_weight = _validate_scale_ticket(ticket_data)
+            item_query = db.query(OrderItem).filter(OrderItem.item_code == ticket_data.item_code)
+            if ticket_data.order_number:
+                item_query = item_query.filter(OrderItem.order_number == ticket_data.order_number)
+            item = item_query.first()
+            if not item:
+                errors += 1
+                continue
+            ticket = ScaleTicket(
+                item_code=item.item_code,
+                order_number=row.get("order_number"),
+                customer_name=row.get("customer_name"),
+                description=row.get("description"),
+                spout_count=ticket_data.spout_count,
+                cup_min_g=ticket_data.cup_min_g,
+                cup_max_g=ticket_data.cup_max_g,
+                pour1_min_g=ticket_data.pour1_min_g,
+                pour1_max_g=ticket_data.pour1_max_g,
+                pour2_min_g=ticket_data.pour2_min_g,
+                pour2_max_g=ticket_data.pour2_max_g,
+                readings_json=json.dumps(
+                    [reading.model_dump() if hasattr(reading, "model_dump") else reading.dict() for reading in ticket_data.readings],
+                    ensure_ascii=False,
+                ),
+                average_wax_weight_g=average_weight,
+                notes=ticket_data.notes,
+                created_at=_dt(row.get("created_at")) or datetime.utcnow(),
+            )
+            db.add(ticket)
+            restored_tickets += 1
+        except (ValidationError, ValueError):
+            errors += 1
+
     try:
         db.commit()
     except Exception as e:
@@ -830,6 +1050,7 @@ async def restore_database(
         "deleted": deleted,
         "inserted": inserted,
         "updated": updated,
+        "restored_scale_tickets": restored_tickets,
         "errors": errors,
         "message": f"Restore OK ({mode}): {inserted} new, {updated} updated" + (f", cleared {deleted}" if deleted else ""),
     }

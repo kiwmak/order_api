@@ -54,6 +54,28 @@ CREATE INDEX IF NOT EXISTS ix_order_items_id ON order_items (id);
 CREATE INDEX IF NOT EXISTS ix_order_items_order_number ON order_items (order_number);
 CREATE INDEX IF NOT EXISTS ix_order_items_item_code ON order_items (item_code);
 
+-- Giữ phiếu cân giả định riêng theo mã hàng để lịch sử vẫn tồn tại khi đơn hàng thay đổi.
+CREATE TABLE IF NOT EXISTS scale_tickets (
+    id SERIAL PRIMARY KEY,
+    item_code VARCHAR(100) NOT NULL,
+    order_number VARCHAR(100),
+    customer_name VARCHAR(200),
+    description TEXT,
+    spout_count INTEGER NOT NULL,
+    cup_min_g INTEGER NOT NULL,
+    cup_max_g INTEGER NOT NULL,
+    pour1_min_g INTEGER NOT NULL,
+    pour1_max_g INTEGER NOT NULL,
+    pour2_min_g INTEGER NOT NULL,
+    pour2_max_g INTEGER NOT NULL,
+    readings_json TEXT NOT NULL,
+    average_wax_weight_g DOUBLE PRECISION NOT NULL,
+    notes TEXT,
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT (NOW() AT TIME ZONE 'utc') NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_scale_tickets_item_code ON scale_tickets (item_code);
+
 -- (Tùy chọn) Cho phép app đọc/ghi qua role mặc định
 -- GRANT ALL ON order_items TO postgres;
 -- GRANT USAGE, SELECT ON SEQUENCE order_items_id_seq TO postgres;
