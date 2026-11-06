@@ -1108,7 +1108,11 @@
   <main>
     <!-- ========== DASHBOARD ========== -->
     <div class="panel" id="panel-dashboard">
-      <div style="display:flex;justify-content:flex-end;margin-bottom:0.75rem;">
+      <div style="display:flex;justify-content:flex-end;align-items:center;gap:0.6rem;margin-bottom:0.75rem;">
+        <label for="dashYearSelect" id="ui-year-filter" style="font-size:0.85rem;color:var(--muted);">Year</label>
+        <select id="dashYearSelect" class="search-box" style="flex:0 0 auto;width:auto;min-width:120px;padding:0.45rem 0.65rem;">
+          <option value="">All years</option>
+        </select>
         <button type="button" class="btn btn-ghost" id="dashRefreshBtn"><span id="ui-refresh">Refresh</span></button>
       </div>
       <div class="kpi-grid" id="kpiGrid"></div>
@@ -1515,6 +1519,8 @@ document.getElementById("searchInput").placeholder = t("search");
       document.getElementById("ui-chart-item").textContent = t("chart_item");
       document.getElementById("ui-chart-order").textContent = t("chart_order");
       document.getElementById("ui-recent").textContent = t("recent_imports");
+      document.getElementById("ui-year-filter").textContent = t("year_filter");
+      document.querySelector('#dashYearSelect option[value=""]').textContent = t("all_years");
       document.getElementById("ui-notify-title").textContent = t("notify_title");
       document.getElementById("ui-refresh").textContent = t("refresh");
       document.getElementById("markReadBtn").textContent = t("mark_read");
@@ -2333,6 +2339,7 @@ document.getElementById("searchInput").placeholder = t("search");
         ${renderValueRow(label("Rót lần đầu (bao gồm cốc và sáp)", "First pour (cup and wax)", "第一次灌装（含杯和蜡）"), rows.map(row => row.cup + row.pour1))}
         ${renderValueRow(label("Rót lần cuối (bao gồm cốc và sáp)", "Final pour (cup and wax)", "最后一次灌装（含杯和蜡）"), rows.map(row => row.cup + row.pour1 + row.pour2))}
         ${renderValueRow(label("Trọng lượng sáp nến", "Candle wax weight", "蜡烛蜡重"), waxWeights, true)}
+        ${hasUnitWaxWeight ? `<tr><th scope="row" style="padding:0.65rem;text-align:left;font-weight:500;">${label("Trọng lượng sáp đơn vị", "Unit wax weight", "单位蜡重")}</th><td colspan="${spoutCount}" style="padding:0.65rem;text-align:center;">${unitWaxWeight} g</td></tr>` : ""}
         <tr>
           <th scope="row" style="padding:0.65rem;text-align:left;font-weight:500;">${label("Trọng lượng trung bình", "Average weight", "平均重量")}</th>
           <td colspan="${spoutCount}" style="padding:0.65rem;text-align:center;font-weight:700;">${averageWaxWeight}</td>
@@ -2884,9 +2891,13 @@ document.getElementById("searchInput").placeholder = t("search");
 
     async function loadDashboard() {
       try {
-        const res = await fetch("/api/dashboard?top=10");
+        const params = new URLSearchParams({ top: "10" });
+        const selectedYear = document.getElementById("dashYearSelect").value;
+        if (selectedYear) params.set("year", selectedYear);
+        const res = await fetch(`/api/dashboard?${params}`);
         if (!res.ok) return;
         const data = await res.json();
+        updateDashboardYears(data.years || []);
         renderKpis(data.kpis || {});
         renderCustomerChart(data.by_customer || []);
         renderItemChart(data.by_item || []);
@@ -2895,6 +2906,14 @@ document.getElementById("searchInput").placeholder = t("search");
       } catch (e) {
         console.warn("dashboard", e);
       }
+    }
+
+    function updateDashboardYears(years) {
+      const select = document.getElementById("dashYearSelect");
+      const selectedYear = select.value;
+      select.innerHTML = `<option value="">${esc(t("all_years"))}</option>` +
+        years.map(year => `<option value="${year}">${year}</option>`).join("");
+      select.value = selectedYear;
     }
 
     function renderKpis(k) {
@@ -3082,6 +3101,7 @@ document.getElementById("searchInput").placeholder = t("search");
     }
 
     document.getElementById("dashRefreshBtn").addEventListener("click", () => loadDashboard());
+    document.getElementById("dashYearSelect").addEventListener("change", () => loadDashboard());
 
     // ---- Notifications (poll) ----
     function getSeenMaxId() {

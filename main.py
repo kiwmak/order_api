@@ -1648,20 +1648,42 @@ def stats(db: Session = Depends(get_db)):
 @app.get("/api/dashboard")
 def dashboard(
     top: int = Query(10, ge=1, le=50),
+    year: Optional[int] = Query(None, ge=1900, le=9998),
     db: Session = Depends(get_db),
 ):
-    """Full dashboard data: KPIs, charts by customer / item / order, recent rows."""
-    total_items = db.query(OrderItem).count()
-    distinct_orders = db.query(OrderItem.order_number).distinct().count()
-    distinct_customers = db.query(OrderItem.customer_name).distinct().count()
-    distinct_items = db.query(OrderItem.item_code).distinct().count()
-    total_qty = int(db.query(func.coalesce(func.sum(OrderItem.order_qty), 0)).scalar() or 0)
-    max_id = db.query(func.max(OrderItem.id)).scalar() or 0
-    last_import = db.query(func.max(OrderItem.imported_at)).scalar()
+    """Full dashboard data, optionally filtered by order year."""
+    year_expr = func.extract("year", OrderItem.order_date)
+    years = [
+        int(row[0])
+        for row in (
+            db.query(year_expr)
+            .filter(OrderItem.order_date.isnot(None))
+            .distinct()
+            .order_by(desc(year_expr))
+            .all()
+        )
+    ]
+
+    orders_query = db.query(OrderItem)
+    if year is not None:
+        orders_query = orders_query.filter(
+            OrderItem.order_date >= date(year, 1, 1),
+            OrderItem.order_date < date(year + 1, 1, 1),
+        )
+
+    total_items = orders_query.count()
+    distinct_orders = orders_query.with_entities(OrderItem.order_number).distinct().count()
+    distinct_customers = orders_query.with_entities(OrderItem.customer_name).distinct().count()
+    distinct_items = orders_query.with_entities(OrderItem.item_code).distinct().count()
+    total_qty = int(
+        orders_query.with_entities(func.coalesce(func.sum(OrderItem.order_qty), 0)).scalar() or 0
+    )
+    max_id = orders_query.with_entities(func.max(OrderItem.id)).scalar() or 0
+    last_import = orders_query.with_entities(func.max(OrderItem.imported_at)).scalar()
 
     # --- By customer ---
     cust_rows = (
-        db.query(
+        orders_query.with_entities(
             OrderItem.customer_name,
             func.count(OrderItem.id).label("line_count"),
             func.coalesce(func.sum(OrderItem.order_qty), 0).label("qty"),
@@ -1684,7 +1706,7 @@ def dashboard(
 
     # --- By item code ---
     item_rows = (
-        db.query(
+        orders_query.with_entities(
             OrderItem.item_code,
             func.count(OrderItem.id).label("line_count"),
             func.coalesce(func.sum(OrderItem.order_qty), 0).label("qty"),
@@ -1701,7 +1723,7 @@ def dashboard(
         code = r.item_code
         # Distinct customers & order numbers for tooltip
         cust_list = [
-            x[0] for x in db.query(OrderItem.customer_name)
+            x[0] for x in orders_query.with_entities(OrderItem.customer_name)
             .filter(OrderItem.item_code == code)
             .distinct()
             .limit(15)
@@ -1709,7 +1731,7 @@ def dashboard(
             if x[0]
         ]
         order_list = [
-            x[0] for x in db.query(OrderItem.order_number)
+            x[0] for x in orders_query.with_entities(OrderItem.order_number)
             .filter(OrderItem.item_code == code)
             .distinct()
             .limit(15)
@@ -1728,7 +1750,7 @@ def dashboard(
 
     # --- By order number ---
     order_rows = (
-        db.query(
+        orders_query.with_entities(
             OrderItem.order_number,
             OrderItem.customer_name,
             func.count(OrderItem.id).label("line_count"),
@@ -1755,7 +1777,7 @@ def dashboard(
 
     # --- Recent imports ---
     recent_q = (
-        db.query(OrderItem)
+        orders_query
         .order_by(OrderItem.id.desc())
         .limit(15)
         .all()
@@ -1774,6 +1796,8 @@ def dashboard(
     ]
 
     return {
+        "years": years,
+        "selected_year": year,
         "kpis": {
             "total_items": total_items,
             "distinct_orders": distinct_orders,

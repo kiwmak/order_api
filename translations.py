@@ -453,6 +453,16 @@ UI_TEXT = {
         "en": "Refresh",
         "vi": "Làm mới"
     },
+    "year_filter": {
+        "zh": "年份",
+        "en": "Year",
+        "vi": "Năm"
+    },
+    "all_years": {
+        "zh": "所有年份",
+        "en": "All years",
+        "vi": "Tất cả năm"
+    },
     "no_chart_data": {
         "zh": "暂无图表数据",
         "en": "No chart data yet",
