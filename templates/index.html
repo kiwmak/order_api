@@ -787,6 +787,55 @@
       font-weight: 600;
       box-shadow: var(--shadow-sm);
     }
+    .aql-card {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: clamp(1.1rem, 3vw, 2rem);
+    }
+    .aql-heading { text-align: center; margin-bottom: 1.5rem; }
+    .aql-heading h2 { justify-content: center; font-size: clamp(1.35rem, 3vw, 1.8rem); margin: 0; }
+    .aql-controls {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1rem 1.5rem;
+      padding: 1rem;
+      margin-bottom: 1.25rem;
+      border: 1px solid #93c5fd;
+      border-radius: 12px;
+      background: #ecfeff;
+    }
+    .aql-control { display: flex; flex-direction: column; gap: 0.4rem; }
+    .aql-control label { font-size: 0.85rem; font-weight: 600; color: #1e3a8a; }
+    .aql-control select {
+      width: 100%;
+      min-height: 2.5rem;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 0.45rem 0.65rem;
+      background: white;
+      color: var(--text);
+      font: inherit;
+    }
+    .aql-results-wrap { overflow-x: auto; }
+    .aql-results {
+      width: 100%;
+      min-width: 480px;
+      border-collapse: collapse;
+      table-layout: fixed;
+      text-align: center;
+      font-weight: 700;
+    }
+    .aql-results th, .aql-results td { border: 1px solid #334155; padding: 0.65rem 0.45rem; }
+    .aql-results thead th { background: #fed7aa; color: #1e3a8a; font-size: 1.05rem; }
+    .aql-results thead th:first-child { width: 34%; }
+    .aql-results tbody th { background: #991b1b; color: white; text-align: right; }
+    .aql-results tbody td { background: #fef9a7; }
+    .aql-note { margin-top: 1rem; color: var(--muted); font-size: 0.78rem; }
+    .aql-warning { padding: 0.85rem 1rem; border-radius: 8px; background: #fff7ed; color: #9a3412; }
+    @media (max-width: 650px) {
+      .aql-controls { grid-template-columns: 1fr; gap: 0.75rem; }
+      .aql-card { padding: 1rem; }
+    }
     .panel { display: none; }
     .panel.active { display: block; animation: fadeIn 0.2s ease; }
 
@@ -1079,6 +1128,7 @@
       <div class="nav-tabs">
         <button type="button" data-panel="dashboard" id="tab-dashboard">Dashboard</button>
         <button type="button" data-panel="orders" class="active" id="tab-orders">Orders</button>
+        <button type="button" data-panel="aql" id="tab-aql">AQL Calculator</button>
       </div>
       <div class="notif-wrap">
         <button type="button" class="notif-btn" id="notifBtn" title="Notifications">🔔<span class="notif-badge" id="notifBadge">0</span></button>
@@ -1160,6 +1210,89 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- ========== AQL CALCULATOR ========== -->
+    <div class="panel" id="panel-aql">
+      <section class="card aql-card">
+        <div class="aql-heading">
+          <p id="aql-title" style="font-weight:700;">ISO 2859-1 - Single Sampling Plan</p>
+          <h2 id="aql-subtitle">Sampling Size Calculator</h2>
+        </div>
+        <div class="aql-controls">
+          <div class="aql-control">
+            <label for="aqlInspectionType" id="aql-label-inspection">Inspection Type</label>
+            <select id="aqlInspectionType">
+              <option value="normal">Normal</option>
+              <option value="reduced">Reduced</option>
+              <option value="tightened">Tightened</option>
+            </select>
+          </div>
+          <div class="aql-control">
+            <label for="aqlQuantity" id="aql-label-quantity">Quantity</label>
+            <select id="aqlQuantity">
+              <option value="0">2 to 8</option>
+              <option value="1">9 to 15</option>
+              <option value="2">16 to 25</option>
+              <option value="3">26 to 50</option>
+              <option value="4">51 to 90</option>
+              <option value="5">91 to 150</option>
+              <option value="6">151 to 280</option>
+              <option value="7">281 to 500</option>
+              <option value="8">501 to 1,200</option>
+              <option value="9">1,201 to 3,200</option>
+              <option value="10">3,201 to 10,000</option>
+              <option value="11" selected>10,001 to 35,000</option>
+              <option value="12">35,001 to 150,000</option>
+              <option value="13">150,001 to 500,000</option>
+              <option value="14">500,001 and over</option>
+            </select>
+          </div>
+          <div class="aql-control">
+            <label for="aqlLevel" id="aql-label-level">Inspection Level</label>
+            <select id="aqlLevel">
+              <option value="I">Level I</option>
+              <option value="II" selected>Level II</option>
+              <option value="III">Level III</option>
+              <option value="S1">Level S-1</option>
+              <option value="S2">Level S-2</option>
+              <option value="S3">Level S-3</option>
+              <option value="S4">Level S-4</option>
+            </select>
+          </div>
+          <div class="aql-control">
+            <label for="aqlCritical" id="aql-label-critical">Critical</label>
+            <select id="aqlCritical"></select>
+          </div>
+          <div class="aql-control">
+            <label for="aqlMajor" id="aql-label-major">Major</label>
+            <select id="aqlMajor"></select>
+          </div>
+          <div class="aql-control">
+            <label for="aqlMinor" id="aql-label-minor">Minor</label>
+            <select id="aqlMinor"></select>
+          </div>
+        </div>
+        <div id="aqlUnavailable" class="aql-warning" role="status" hidden></div>
+        <div class="aql-results-wrap" id="aqlResultsWrap">
+          <table class="aql-results">
+            <thead>
+              <tr>
+                <th></th>
+                <th id="aql-head-critical">Critical</th>
+                <th id="aql-head-major">Major</th>
+                <th id="aql-head-minor">Minor</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><th id="aql-row-aql">AQL</th><td id="aql-result-critical">0</td><td id="aql-result-major">2.5</td><td id="aql-result-minor">4.0</td></tr>
+              <tr><th id="aql-row-sample">Sampling Size</th><td id="aql-size-critical">315</td><td id="aql-size-major">315</td><td id="aql-size-minor">315</td></tr>
+              <tr><th id="aql-row-acceptable">Max Acceptable</th><td id="aql-max-critical">0</td><td id="aql-max-major">14</td><td id="aql-max-minor">21</td></tr>
+            </tbody>
+          </table>
+          <p class="aql-note" id="aql-note"></p>
+        </div>
+      </section>
     </div>
 
     <!-- ========== ORDERS ========== -->
@@ -1483,6 +1616,108 @@
       return o[lang] || o.en || key;
     }
 
+    const AQL_CODE_LETTERS = [
+      { I: "A", II: "A", III: "B", S1: "A", S2: "A", S3: "A", S4: "A" },
+      { I: "A", II: "B", III: "C", S1: "A", S2: "A", S3: "A", S4: "B" },
+      { I: "B", II: "C", III: "D", S1: "A", S2: "A", S3: "B", S4: "C" },
+      { I: "C", II: "D", III: "E", S1: "A", S2: "B", S3: "B", S4: "C" },
+      { I: "C", II: "E", III: "F", S1: "B", S2: "B", S3: "C", S4: "C" },
+      { I: "D", II: "F", III: "G", S1: "B", S2: "B", S3: "C", S4: "D" },
+      { I: "E", II: "G", III: "H", S1: "B", S2: "C", S3: "D", S4: "E" },
+      { I: "F", II: "H", III: "J", S1: "B", S2: "C", S3: "D", S4: "E" },
+      { I: "G", II: "J", III: "K", S1: "C", S2: "C", S3: "E", S4: "F" },
+      { I: "H", II: "K", III: "L", S1: "C", S2: "D", S3: "E", S4: "G" },
+      { I: "J", II: "L", III: "M", S1: "C", S2: "D", S3: "F", S4: "G" },
+      { I: "K", II: "M", III: "N", S1: "C", S2: "D", S3: "F", S4: "H" },
+      { I: "L", II: "N", III: "P", S1: "D", S2: "E", S3: "G", S4: "J" },
+      { I: "M", II: "P", III: "Q", S1: "D", S2: "E", S3: "G", S4: "J" },
+      { I: "N", II: "Q", III: "R", S1: "D", S2: "E", S3: "H", S4: "K" }
+    ];
+    const AQL_SAMPLE_SIZES = { A: 2, B: 3, C: 5, D: 8, E: 13, F: 20, G: 32, H: 50, J: 80, K: 125, L: 200, M: 315, N: 500, P: 800, Q: 1250, R: 2000 };
+    const AQL_VALUES = ["0.065", "0.1", "0.15", "0.25", "0.4", "0.65", "1", "1.5", "2.5", "4", "6.5", "10"];
+    const AQL_ACCEPT_NUMBERS = {
+      "0.065": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 5],
+      "0.1":   [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 5, 7],
+      "0.15":  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 3, 5, 7],
+      "0.25":  [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 3, 5, 7, 10, 14],
+      "0.4":   [0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 3, 5, 7, 10, 14, 21],
+      "0.65":  [0, 0, 0, 0, 0, 1, 1, 2, 2, 3, 5, 7, 10, 14, 21, 21],
+      "1":     [0, 0, 0, 0, 0, 0, 1, 2, 3, 5, 7, 10, 14, 21, 21, 21],
+      "1.5":   [0, 0, 0, 0, 0, 1, 2, 3, 5, 7, 10, 14, 21, 21, 21, 21],
+      "2.5":   [0, 0, 0, 0, 1, 2, 3, 5, 7, 10, 14, 14, 21, 21, 21, 21],
+      "4":     [0, 0, 0, 1, 1, 3, 5, 7, 10, 14, 21, 21, 21, 21, 21, 21],
+      "6.5":   [0, 0, 1, 1, 2, 5, 7, 10, 14, 21, 21, 21, 21, 21, 21, 21],
+      "10":    [1, 1, 1, 2, 3, 5, 7, 10, 14, 21, 21, 21, 21, 21, 21, 21]
+    };
+
+    function renderAqlCalculator() {
+      const labels = [
+        ["aqlCritical", true],
+        ["aqlMajor", false],
+        ["aqlMinor", false]
+      ];
+      labels.forEach(([id, allowZero]) => {
+        const select = document.getElementById(id);
+        const selected = select.value || (id === "aqlCritical" ? "0" : id === "aqlMajor" ? "2.5" : "4");
+        const options = allowZero ? ['<option value="0">0</option>'] : [];
+        AQL_VALUES.forEach(value => options.push(`<option value="${value}">${Number(value).toFixed(value.includes(".") && value.split(".")[1].length === 1 ? 1 : value.includes(".") ? value.split(".")[1].length : 1)}</option>`));
+        select.innerHTML = options.join("");
+        select.value = options.some(option => option.includes(`value="${selected}"`)) ? selected : (id === "aqlCritical" ? "0" : id === "aqlMajor" ? "2.5" : "4");
+      });
+
+      document.getElementById("aql-title").textContent = t("aql_title");
+      document.getElementById("aql-subtitle").textContent = t("aql_subtitle");
+      document.getElementById("aql-label-inspection").textContent = t("aql_inspection_type");
+      document.getElementById("aql-label-quantity").textContent = t("aql_quantity");
+      document.getElementById("aql-label-level").textContent = t("aql_level");
+      document.getElementById("aql-label-critical").textContent = t("aql_critical");
+      document.getElementById("aql-label-major").textContent = t("aql_major");
+      document.getElementById("aql-label-minor").textContent = t("aql_minor");
+      document.querySelector('#aqlInspectionType option[value="normal"]').textContent = t("aql_normal");
+      document.querySelector('#aqlInspectionType option[value="reduced"]').textContent = t("aql_reduced");
+      document.querySelector('#aqlInspectionType option[value="tightened"]').textContent = t("aql_tightened");
+      const levelPrefix = lang === "vi" ? "Mức" : lang === "zh" ? "水平" : "Level";
+      document.querySelectorAll("#aqlLevel option").forEach(option => {
+        const label = option.value.startsWith("S") ? `S-${option.value.slice(1)}` : option.value;
+        option.textContent = `${levelPrefix} ${label}`;
+      });
+      ["critical", "major", "minor"].forEach(type => {
+        document.getElementById(`aql-head-${type}`).textContent = t(`aql_${type}`);
+      });
+      document.getElementById("aql-row-aql").textContent = "AQL";
+      document.getElementById("aql-row-sample").textContent = t("aql_sample_size");
+      document.getElementById("aql-row-acceptable").textContent = t("aql_max_acceptable");
+      document.getElementById("aql-note").textContent = t("aql_table_note");
+      updateAqlResults();
+    }
+
+    function updateAqlResults() {
+      const unavailable = document.getElementById("aqlUnavailable");
+      const results = document.getElementById("aqlResultsWrap");
+      if (document.getElementById("aqlInspectionType").value !== "normal") {
+        unavailable.textContent = t("aql_mode_unavailable");
+        unavailable.hidden = false;
+        results.hidden = true;
+        return;
+      }
+      unavailable.hidden = true;
+      results.hidden = false;
+
+      const rangeIndex = Number(document.getElementById("aqlQuantity").value);
+      const level = document.getElementById("aqlLevel").value;
+      const codeLetter = AQL_CODE_LETTERS[rangeIndex][level];
+      const sampleSize = AQL_SAMPLE_SIZES[codeLetter];
+      const codeIndex = Object.keys(AQL_SAMPLE_SIZES).indexOf(codeLetter);
+      ["critical", "major", "minor"].forEach(type => {
+        const aql = document.getElementById(`aql${type[0].toUpperCase()}${type.slice(1)}`).value;
+        const accept = aql === "0" ? 0 : AQL_ACCEPT_NUMBERS[aql][codeIndex];
+        const decimalPlaces = aql === "0" ? 0 : Math.max(1, (aql.split(".")[1] || "").length);
+        document.getElementById(`aql-result-${type}`).textContent = Number(aql).toFixed(decimalPlaces);
+        document.getElementById(`aql-size-${type}`).textContent = sampleSize;
+        document.getElementById(`aql-max-${type}`).textContent = accept;
+      });
+    }
+
     function applyLang() {
       document.getElementById("ui-title").textContent = t("title");
       document.getElementById("ui-subtitle").textContent = t("subtitle");
@@ -1515,6 +1750,7 @@ document.getElementById("searchInput").placeholder = t("search");
   if (exportPoSkuBtn) exportPoSkuBtn.onclick = exportPoSkuExcel;
   document.getElementById("tab-dashboard").textContent = t("nav_dashboard");
       document.getElementById("tab-orders").textContent = t("nav_orders");
+  document.getElementById("tab-aql").textContent = t("nav_aql");
       document.getElementById("ui-chart-customer").textContent = t("chart_customer");
       document.getElementById("ui-chart-item").textContent = t("chart_item");
       document.getElementById("ui-chart-order").textContent = t("chart_order");
@@ -1538,6 +1774,7 @@ document.getElementById("searchInput").placeholder = t("search");
       if (sb) sb.textContent = t("save");
       const gb = document.getElementById("guestBanner");
       if (gb && !isLoggedIn()) gb.textContent = t("guest_hint");
+      renderAqlCalculator();
       document.querySelectorAll(".lang-switch button").forEach(b => {
         b.classList.toggle("active", b.dataset.lang === lang);
       });
@@ -2879,6 +3116,9 @@ document.getElementById("searchInput").placeholder = t("search");
         document.getElementById("panel-" + btn.dataset.panel).classList.add("active");
         if (btn.dataset.panel === "dashboard") loadDashboard();
       });
+    });
+    ["aqlInspectionType", "aqlQuantity", "aqlLevel", "aqlCritical", "aqlMajor", "aqlMinor"].forEach(id => {
+      document.getElementById(id).addEventListener("change", updateAqlResults);
     });
 
     // ---- Dashboard + Charts ----

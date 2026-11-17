@@ -388,6 +388,86 @@ UI_TEXT = {
         "en": "Orders",
         "vi": "Đơn hàng"
     },
+    "nav_aql": {
+        "zh": "AQL 计算器",
+        "en": "AQL Calculator",
+        "vi": "Tính AQL"
+    },
+    "aql_title": {
+        "zh": "ISO 2859-1 单次抽样方案",
+        "en": "ISO 2859-1 - Single Sampling Plan",
+        "vi": "ISO 2859-1 - Kế hoạch lấy mẫu đơn"
+    },
+    "aql_subtitle": {
+        "zh": "抽样数量计算器",
+        "en": "Sampling Size Calculator",
+        "vi": "Máy tính cỡ mẫu"
+    },
+    "aql_inspection_type": {
+        "zh": "检验类型",
+        "en": "Inspection Type",
+        "vi": "Loại kiểm tra"
+    },
+    "aql_normal": {
+        "zh": "正常",
+        "en": "Normal",
+        "vi": "Thông thường"
+    },
+    "aql_reduced": {
+        "zh": "放宽",
+        "en": "Reduced",
+        "vi": "Giảm"
+    },
+    "aql_tightened": {
+        "zh": "加严",
+        "en": "Tightened",
+        "vi": "Siết chặt"
+    },
+    "aql_quantity": {
+        "zh": "批量",
+        "en": "Quantity",
+        "vi": "Số lượng lô"
+    },
+    "aql_level": {
+        "zh": "检验水平",
+        "en": "Inspection Level",
+        "vi": "Mức kiểm tra"
+    },
+    "aql_critical": {
+        "zh": "严重",
+        "en": "Critical",
+        "vi": "Nghiêm trọng"
+    },
+    "aql_major": {
+        "zh": "主要",
+        "en": "Major",
+        "vi": "Nặng"
+    },
+    "aql_minor": {
+        "zh": "次要",
+        "en": "Minor",
+        "vi": "Nhẹ"
+    },
+    "aql_sample_size": {
+        "zh": "抽样数量",
+        "en": "Sampling Size",
+        "vi": "Cỡ mẫu"
+    },
+    "aql_max_acceptable": {
+        "zh": "最大允收数",
+        "en": "Max Acceptable",
+        "vi": "Số lỗi tối đa chấp nhận"
+    },
+    "aql_mode_unavailable": {
+        "zh": "此版本尚未验证放宽/加严检验的 Ac/Re 表。为避免给出不准确结果，请选择正常检验。",
+        "en": "Verified Ac/Re tables for Reduced/Tightened inspection are not available yet. Select Normal to avoid inaccurate results.",
+        "vi": "Chưa có bảng Ac/Re đã xác minh cho chế độ Giảm/Siết chặt. Hãy chọn Thông thường để tránh kết quả không chính xác."
+    },
+    "aql_table_note": {
+        "zh": "正常检验数据按 ISO 2859-1:1999 Table 2-A；AQL 0 是零允收约定，并非标准 AQL 等级。请与适用版本及客户要求核对。",
+        "en": "Normal-inspection data follows ISO 2859-1:1999 Table 2-A. AQL 0 is a zero-acceptance convention, not a standard AQL level. Verify against the applicable edition and customer requirements.",
+        "vi": "Dữ liệu Normal theo ISO 2859-1:1999 Table 2-A. AQL 0 là quy ước không chấp nhận lỗi, không phải mức AQL tiêu chuẩn. Hãy đối chiếu phiên bản áp dụng và yêu cầu khách hàng."
+    },
     "kpi_items": {
         "zh": "明细行数",
         "en": "Line items",
