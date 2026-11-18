@@ -464,9 +464,9 @@ UI_TEXT = {
         "vi": "Chưa có bảng Ac/Re đã xác minh cho chế độ Giảm/Siết chặt. Hãy chọn Thông thường để tránh kết quả không chính xác."
     },
     "aql_table_note": {
-        "zh": "正常检验数据按 ISO 2859-1:1999 Table 2-A；AQL 0 是零允收约定，并非标准 AQL 等级。请与适用版本及客户要求核对。",
-        "en": "Normal-inspection data follows ISO 2859-1:1999 Table 2-A. AQL 0 is a zero-acceptance convention, not a standard AQL level. Verify against the applicable edition and customer requirements.",
-        "vi": "Dữ liệu Normal theo ISO 2859-1:1999 Table 2-A. AQL 0 là quy ước không chấp nhận lỗi, không phải mức AQL tiêu chuẩn. Hãy đối chiếu phiên bản áp dụng và yêu cầu khách hàng."
+        "zh": "正常检验按 ISO 2859-1:1999 Table 2-A（已核对列：0.065–6.5），包含箭头对应的样本量转换。AQL 0 是零允收约定，并非标准等级。请与适用版本及客户要求核对。",
+        "en": "Normal inspection follows ISO 2859-1:1999 Table 2-A (verified columns: 0.065–6.5), including arrow-directed sample-size changes. AQL 0 is a zero-acceptance convention, not a standard level. Verify against the applicable edition and customer requirements.",
+        "vi": "Normal theo ISO 2859-1:1999 Table 2-A (các mức đã đối chiếu: 0,065–6,5), có xử lý mũi tên đổi cỡ mẫu. AQL 0 là quy ước không chấp nhận lỗi, không phải mức tiêu chuẩn. Hãy đối chiếu phiên bản áp dụng và yêu cầu khách hàng."
     },
     "kpi_items": {
         "zh": "明细行数",
