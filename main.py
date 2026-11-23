@@ -1190,6 +1190,17 @@ def export_order_ipqc(
     sheet["I3"] = datetime.now(VIETNAM_TZ).strftime("%d / %m / %Y")
     sheet["E4"] = user
 
+    fragrance_name = item.fragrance_name or item.fragrance_code or ""
+    if item.fragrance_name and item.fragrance_code:
+        fragrance_name = f"{item.fragrance_name} / {item.fragrance_code}"
+    sheet["F12"] = fragrance_name
+    sheet["F13"] = item.wax_color or ""
+
+    if item.unit_wax_weight_g is not None:
+        sheet["F22"] = f"{item.unit_wax_weight_g:g}g"
+    if item.container_size:
+        sheet["F26"] = item.container_size
+
     for row in range(6, 26):
         for column in range(8, 12):
             cell = sheet.cell(row=row, column=column)
