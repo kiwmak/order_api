@@ -24,6 +24,7 @@ from sqlalchemy import func, desc, cast, String
 from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel, Field, ValidationError
 from openpyxl import Workbook, load_workbook
+from openpyxl.cell.cell import MergedCell
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
@@ -1191,9 +1192,15 @@ def export_order_ipqc(
 
     for row in range(6, 26):
         for column in range(8, 12):
-            sheet.cell(row=row, column=column).value = None
-        sheet.cell(row=row, column=12).value = None
-        sheet.cell(row=row, column=13).value = None
+            cell = sheet.cell(row=row, column=column)
+            if not isinstance(cell, MergedCell):
+                cell.value = None
+        result_cell = sheet.cell(row=row, column=12)
+        if not isinstance(result_cell, MergedCell):
+            result_cell.value = None
+        note_cell = sheet.cell(row=row, column=13)
+        if not isinstance(note_cell, MergedCell):
+            note_cell.value = None
 
     output = io.BytesIO()
     workbook.save(output)
