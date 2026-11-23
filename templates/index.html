@@ -1377,6 +1377,7 @@
         <div style="display:flex;gap:0.5rem;align-items:center;">
           <button type="button" class="btn btn-ghost auth-only role-only" data-roles="admin" id="editBtn" style="display:none;font-size:0.85rem;">Edit</button>
           <button type="button" class="btn btn-danger auth-only role-only" data-roles="admin" id="deleteItemBtn" style="display:none;font-size:0.85rem;padding:0.35rem 0.7rem;">Delete</button>
+          <button type="button" class="btn btn-primary auth-only role-only" data-roles="admin,staff,viewer" id="ipqcTicketBtn" style="display:none;font-size:0.85rem;">Tạo phiếu đi chuyền</button>
           <button type="button" class="btn btn-primary" id="scaleTicketBtn" style="display:none;font-size:0.85rem;">Tạo phiếu cân giả định</button>
           <button type="button" class="btn btn-primary auth-only role-only" data-roles="admin,staff,viewer" id="realScaleTicketBtn" style="display:none;font-size:0.85rem;">Tạo phiếu cân thật</button>
           <button class="btn btn-ghost" id="modalClose">✕</button>
@@ -2359,6 +2360,7 @@ document.getElementById("searchInput").placeholder = t("search");
         scaleTicketHistory = [];
         document.getElementById("scaleTicketBtn").style.display = "none";
         document.getElementById("realScaleTicketBtn").style.display = "none";
+        document.getElementById("ipqcTicketBtn").style.display = "none";
         document.getElementById("scaleTicket").innerHTML = "";
         document.getElementById("scaleHistory").innerHTML = "";
         document.getElementById("modalTitle").textContent = `${orderNumber} · ${items.length} mã`;
@@ -2429,6 +2431,7 @@ document.getElementById("searchInput").placeholder = t("search");
       scaleTicketHistory = [];
       document.getElementById("scaleTicketBtn").style.display = "";
       document.getElementById("realScaleTicketBtn").style.display = "";
+      document.getElementById("ipqcTicketBtn").style.display = "";
       document.getElementById("scaleTicket").innerHTML = "";
       document.getElementById("scaleHistory").innerHTML = "";
       const code = o.item_code || "—";
@@ -2960,6 +2963,37 @@ document.getElementById("searchInput").placeholder = t("search");
       }
     }
 
+    async function exportIPQCTicket() {
+      if (currentDetailId == null) return;
+      const label = (vi, en, zh) => lang === "zh" ? zh : lang === "en" ? en : vi;
+      const button = document.getElementById("ipqcTicketBtn");
+      const item = orders.find(order => order.id === currentDetailId);
+      button.disabled = true;
+      try {
+        const res = await authFetch(`/api/orders/${currentDetailId}/ipqc/export`);
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.detail || "Could not export IPQC ticket");
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        const safeCode = (item?.item_code || "ipqc-ticket").replace(/[^\w.-]+/g, "_");
+        link.href = url;
+        link.download = `phieu_ipqc_${safeCode}.xlsx`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        showToast(error.message || label("Không thể tạo phiếu đi chuyền.", "Could not create the IPQC ticket.", "无法创建巡检表。"), "error");
+      } finally {
+        if (button.isConnected) button.disabled = false;
+      }
+    }
+
+    document.getElementById("ipqcTicketBtn").addEventListener("click", exportIPQCTicket);
+
     function startEdit() {
       if (!isLoggedIn() || currentDetailId == null) return;
       const o = orders.find(x => x.id === currentDetailId);
@@ -2967,6 +3001,7 @@ document.getElementById("searchInput").placeholder = t("search");
       editMode = true;
       document.getElementById("scaleTicketBtn").style.display = "none";
       document.getElementById("realScaleTicketBtn").style.display = "none";
+      document.getElementById("ipqcTicketBtn").style.display = "none";
       document.getElementById("scaleTicket").innerHTML = "";
       document.getElementById("detailGrid").style.display = "none";
       const form = document.getElementById("editForm");

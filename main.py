@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, cast, String
 from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel, Field, ValidationError
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
@@ -1163,6 +1163,51 @@ def export_order_scale_ticket(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
             "Content-Disposition": f'attachment; filename="phieu_can_{item.id}.xlsx"'
+        },
+    )
+
+
+@app.get("/api/orders/{item_id}/ipqc/export")
+def export_order_ipqc(
+    item_id: int,
+    db: Session = Depends(get_db),
+    user: str = Depends(require_roles("admin", "staff", "viewer")),
+):
+    item = db.query(OrderItem).filter(OrderItem.id == item_id).first()
+    if not item:
+        raise HTTPException(404, "Order item not found")
+
+    template_path = os.path.join(STATIC_DIR, "templates", "ipqc_template.xlsx")
+    if not os.path.exists(template_path):
+        raise HTTPException(404, "IPQC template not found")
+
+    workbook = load_workbook(template_path)
+    sheet = workbook.active
+
+    sheet["C3"] = item.item_code or ""
+    sheet["F3"] = item.order_number or ""
+    sheet["I3"] = datetime.now(VIETNAM_TZ).strftime("%d / %m / %Y")
+    sheet["E4"] = user
+
+    for row in range(6, 26):
+        for column in range(8, 12):
+            sheet.cell(row=row, column=column).value = None
+        sheet.cell(row=row, column=12).value = None
+        sheet.cell(row=row, column=13).value = None
+
+    output = io.BytesIO()
+    workbook.save(output)
+    output.seek(0)
+
+    safe_code = "".join(
+        char if char.isalnum() or char in ("-", "_", ".") else "_"
+        for char in (item.item_code or "ma_hang")
+    )
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="phieu_ipqc_{safe_code}.xlsx"'
         },
     )
 

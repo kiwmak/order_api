@@ -9,4 +9,5 @@ static/uploads/*
 .env
 .env.local
 *.xlsx
+!static/templates/ipqc_template.xlsx
 .DS_Store
