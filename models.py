@@ -115,13 +115,16 @@ class ScaleTicket(Base):
 
 
 class IPQCTicket(Base):
-    __tablename__ = "ipqc_tickets"
+    __tablename__ = "ipqc_ticket_records"
 
-    item_id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, index=True)
+    item_id = Column(Integer, nullable=False, index=True)
     wick_count = Column(String(200), nullable=True)
     temperature = Column(String(200), nullable=True)
     candle_surface_height = Column(String(200), nullable=True)
     standard_wick_length = Column(String(200), nullable=True)
+    created_by = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_by = Column(String(100), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -147,6 +150,34 @@ def init_db():
         columns = {column["name"] for column in inspect(conn).get_columns("scale_tickets")}
         if "created_by" not in columns:
             conn.execute(text("ALTER TABLE scale_tickets ADD COLUMN created_by VARCHAR(100)"))
+        inspector = inspect(conn)
+        if inspector.has_table("ipqc_tickets"):
+            legacy_columns = {column["name"] for column in inspector.get_columns("ipqc_tickets")}
+            required_columns = {
+                "item_id", "wick_count", "temperature", "candle_surface_height",
+                "standard_wick_length", "updated_by", "updated_at",
+            }
+            if not required_columns.issubset(legacy_columns):
+                raise RuntimeError("Legacy IPQC ticket table has an unexpected schema")
+            legacy_tickets = conn.execute(text(
+                "SELECT item_id, wick_count, temperature, candle_surface_height, "
+                "standard_wick_length, updated_by, updated_at FROM ipqc_tickets"
+            )).mappings()
+            for ticket in legacy_tickets:
+                exists = conn.execute(
+                    text("SELECT id FROM ipqc_ticket_records WHERE item_id = :item_id LIMIT 1"),
+                    {"item_id": ticket["item_id"]},
+                ).first()
+                if exists:
+                    continue
+                conn.execute(text(
+                    "INSERT INTO ipqc_ticket_records "
+                    "(item_id, wick_count, temperature, candle_surface_height, "
+                    "standard_wick_length, created_by, created_at, updated_by, updated_at) "
+                    "VALUES (:item_id, :wick_count, :temperature, :candle_surface_height, "
+                    ":standard_wick_length, :updated_by, :updated_at, :updated_by, :updated_at)"
+                ), dict(ticket))
+            conn.execute(text("DROP TABLE ipqc_tickets"))
     # Ensure product_image can hold base64 data-URIs (Supabase may still be VARCHAR(500))
     try:
         url = str(engine.url)

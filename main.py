@@ -251,11 +251,14 @@ class IPQCTicketUpdate(BaseModel):
 
 
 class IPQCTicketOut(BaseModel):
+    id: int
     item_id: int
     wick_count: str = ""
     temperature: str = ""
     candle_surface_height: str = ""
     standard_wick_length: str = ""
+    created_by: Optional[str] = None
+    created_at: datetime
     updated_at: Optional[datetime] = None
 
 
@@ -900,6 +903,7 @@ def clear_all(
     user: str = Depends(require_roles("admin")),
 ):
     count = db.query(OrderItem).delete()
+    db.query(IPQCTicket).delete()
     db.commit()
     return {"deleted": count}
 
@@ -913,6 +917,7 @@ def delete_item(
     item = db.query(OrderItem).filter(OrderItem.id == item_id).first()
     if not item:
         raise HTTPException(404, "Not found")
+    db.query(IPQCTicket).filter(IPQCTicket.item_id == item_id).delete()
     db.delete(item)
     db.commit()
     return {"deleted": item_id}
@@ -1184,7 +1189,21 @@ def export_order_scale_ticket(
     )
 
 
-@app.get("/api/orders/{item_id}/ipqc", response_model=IPQCTicketOut)
+def _ipqc_ticket_data(ticket: IPQCTicket) -> dict:
+    return {
+        "id": ticket.id,
+        "item_id": ticket.item_id,
+        "wick_count": ticket.wick_count or "",
+        "temperature": ticket.temperature or "",
+        "candle_surface_height": ticket.candle_surface_height or "",
+        "standard_wick_length": ticket.standard_wick_length or "",
+        "created_by": ticket.created_by,
+        "created_at": _vietnam_datetime(ticket.created_at),
+        "updated_at": _vietnam_datetime(ticket.updated_at) if ticket.updated_at else None,
+    }
+
+
+@app.get("/api/orders/{item_id}/ipqc", response_model=List[IPQCTicketOut])
 def get_order_ipqc(
     item_id: int,
     db: Session = Depends(get_db),
@@ -1193,19 +1212,17 @@ def get_order_ipqc(
     item = db.query(OrderItem).filter(OrderItem.id == item_id).first()
     if not item:
         raise HTTPException(404, "Order item not found")
-    ticket = db.query(IPQCTicket).filter(IPQCTicket.item_id == item_id).first()
-    return {
-        "item_id": item_id,
-        "wick_count": ticket.wick_count or "" if ticket else "",
-        "temperature": ticket.temperature or "" if ticket else "",
-        "candle_surface_height": ticket.candle_surface_height or "" if ticket else "",
-        "standard_wick_length": ticket.standard_wick_length or "" if ticket else "",
-        "updated_at": ticket.updated_at if ticket else None,
-    }
+    tickets = (
+        db.query(IPQCTicket)
+        .filter(IPQCTicket.item_id == item_id)
+        .order_by(IPQCTicket.created_at.desc(), IPQCTicket.id.desc())
+        .all()
+    )
+    return [_ipqc_ticket_data(ticket) for ticket in tickets]
 
 
-@app.put("/api/orders/{item_id}/ipqc", response_model=IPQCTicketOut)
-def save_order_ipqc(
+@app.post("/api/orders/{item_id}/ipqc", response_model=IPQCTicketOut)
+def create_order_ipqc(
     item_id: int,
     body: IPQCTicketUpdate,
     db: Session = Depends(get_db),
@@ -1214,10 +1231,39 @@ def save_order_ipqc(
     item = db.query(OrderItem).filter(OrderItem.id == item_id).first()
     if not item:
         raise HTTPException(404, "Order item not found")
-    ticket = db.query(IPQCTicket).filter(IPQCTicket.item_id == item_id).first()
-    if ticket is None:
-        ticket = IPQCTicket(item_id=item_id)
-        db.add(ticket)
+    now = datetime.utcnow()
+    ticket = IPQCTicket(
+        item_id=item_id,
+        created_by=user,
+        created_at=now,
+        updated_by=user,
+        updated_at=now,
+    )
+    ticket.wick_count = body.wick_count or ""
+    ticket.temperature = body.temperature or ""
+    ticket.candle_surface_height = body.candle_surface_height or ""
+    ticket.standard_wick_length = body.standard_wick_length or ""
+    db.add(ticket)
+    db.commit()
+    db.refresh(ticket)
+    return _ipqc_ticket_data(ticket)
+
+
+@app.put("/api/orders/{item_id}/ipqc/{ticket_id}", response_model=IPQCTicketOut)
+def update_order_ipqc(
+    item_id: int,
+    ticket_id: int,
+    body: IPQCTicketUpdate,
+    db: Session = Depends(get_db),
+    user: str = Depends(require_roles("admin", "staff", "viewer")),
+):
+    ticket = (
+        db.query(IPQCTicket)
+        .filter(IPQCTicket.id == ticket_id, IPQCTicket.item_id == item_id)
+        .first()
+    )
+    if not ticket:
+        raise HTTPException(404, "IPQC ticket not found")
     ticket.wick_count = body.wick_count or ""
     ticket.temperature = body.temperature or ""
     ticket.candle_surface_height = body.candle_surface_height or ""
@@ -1226,26 +1272,25 @@ def save_order_ipqc(
     ticket.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(ticket)
-    return {
-        "item_id": item_id,
-        "wick_count": ticket.wick_count or "",
-        "temperature": ticket.temperature or "",
-        "candle_surface_height": ticket.candle_surface_height or "",
-        "standard_wick_length": ticket.standard_wick_length or "",
-        "updated_at": ticket.updated_at,
-    }
+    return _ipqc_ticket_data(ticket)
 
 
 @app.get("/api/orders/{item_id}/ipqc/export")
 def export_order_ipqc(
     item_id: int,
+    ticket_id: Optional[int] = Query(None, ge=1),
     db: Session = Depends(get_db),
     user: str = Depends(require_roles("admin", "staff", "viewer")),
 ):
     item = db.query(OrderItem).filter(OrderItem.id == item_id).first()
     if not item:
         raise HTTPException(404, "Order item not found")
-    ticket = db.query(IPQCTicket).filter(IPQCTicket.item_id == item_id).first()
+    ticket_query = db.query(IPQCTicket).filter(IPQCTicket.item_id == item_id)
+    if ticket_id is not None:
+        ticket_query = ticket_query.filter(IPQCTicket.id == ticket_id)
+    ticket = ticket_query.order_by(IPQCTicket.created_at.desc(), IPQCTicket.id.desc()).first()
+    if not ticket:
+        raise HTTPException(404, "IPQC ticket not found")
 
     template_path = os.path.join(STATIC_DIR, "templates", "ipqc_template.xlsx")
     if not os.path.exists(template_path):
@@ -1299,7 +1344,7 @@ def export_order_ipqc(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
-            "Content-Disposition": f'attachment; filename="phieu_ipqc_{safe_code}.xlsx"'
+            "Content-Disposition": f'attachment; filename="phieu_ipqc_{safe_code}_{ticket.id}.xlsx"'
         },
     )
 
@@ -1429,6 +1474,21 @@ def _scale_ticket_backup(ticket: ScaleTicket) -> dict:
     }
 
 
+def _ipqc_ticket_backup(ticket: IPQCTicket, item: OrderItem) -> dict:
+    return {
+        "item_code": item.item_code,
+        "order_number": item.order_number,
+        "wick_count": ticket.wick_count,
+        "temperature": ticket.temperature,
+        "candle_surface_height": ticket.candle_surface_height,
+        "standard_wick_length": ticket.standard_wick_length,
+        "created_at": _vietnam_datetime(ticket.created_at).isoformat() if ticket.created_at else None,
+        "created_by": ticket.created_by,
+        "updated_at": _vietnam_datetime(ticket.updated_at).isoformat() if ticket.updated_at else None,
+        "updated_by": ticket.updated_by,
+    }
+
+
 
 # ---------- Backup / Restore ----------
 @app.get("/api/backup")
@@ -1487,6 +1547,12 @@ def backup_database(
             "imported_at": x.imported_at.isoformat() if x.imported_at else None,
             "source_file": x.source_file,
         })
+    items_by_id = {item.id: item for item in items}
+    ipqc_tickets = [
+        _ipqc_ticket_backup(ticket, items_by_id[ticket.item_id])
+        for ticket in db.query(IPQCTicket).order_by(IPQCTicket.id).all()
+        if ticket.item_id in items_by_id
+    ]
     payload = {
         "format": "order_api_backup",
         "version": 1,
@@ -1498,6 +1564,7 @@ def backup_database(
             _scale_ticket_backup(ticket)
             for ticket in db.query(ScaleTicket).order_by(ScaleTicket.id).all()
         ],
+        "ipqc_tickets": ipqc_tickets,
     }
     body = json.dumps(payload, ensure_ascii=False, indent=2)
     filename = f"order_backup_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
@@ -1532,6 +1599,9 @@ async def restore_database(
     scale_tickets = data.get("scale_tickets", []) if isinstance(data, dict) else []
     if not isinstance(scale_tickets, list):
         raise HTTPException(400, "Backup scale_tickets must be an array")
+    ipqc_tickets = data.get("ipqc_tickets", []) if isinstance(data, dict) else []
+    if not isinstance(ipqc_tickets, list):
+        raise HTTPException(400, "Backup ipqc_tickets must be an array")
 
     mode = (mode or "replace").lower().strip()
     if mode not in ("replace", "merge"):
@@ -1541,6 +1611,7 @@ async def restore_database(
     if mode == "replace":
         deleted = db.query(OrderItem).delete()
         db.query(ScaleTicket).delete()
+        db.query(IPQCTicket).delete()
         db.commit()
 
     inserted = 0
@@ -1725,6 +1796,58 @@ async def restore_database(
         except (HTTPException, ValidationError, ValueError, TypeError, KeyError):
             errors += 1
 
+    restored_ipqc_tickets = 0
+    for row in ipqc_tickets:
+        if not isinstance(row, dict):
+            errors += 1
+            continue
+        try:
+            item_code = str(row.get("item_code") or "").strip()
+            order_number = str(row.get("order_number") or "").strip()
+            item_query = db.query(OrderItem).filter(OrderItem.item_code == item_code)
+            if order_number:
+                item_query = item_query.filter(OrderItem.order_number == order_number)
+            item = item_query.first()
+            if not item:
+                errors += 1
+                continue
+
+            created_at_value = row.get("created_at")
+            created_at = datetime.fromisoformat(str(created_at_value).replace("Z", "")) if created_at_value else datetime.utcnow()
+            created_at = _database_datetime(created_at)
+            values = {
+                "wick_count": row.get("wick_count") or "",
+                "temperature": row.get("temperature") or "",
+                "candle_surface_height": row.get("candle_surface_height") or "",
+                "standard_wick_length": row.get("standard_wick_length") or "",
+            }
+            if mode == "merge":
+                duplicate_query = db.query(IPQCTicket).filter(
+                    IPQCTicket.item_id == item.id,
+                    IPQCTicket.created_at == created_at,
+                    IPQCTicket.created_by == row.get("created_by"),
+                    IPQCTicket.wick_count == values["wick_count"],
+                    IPQCTicket.temperature == values["temperature"],
+                    IPQCTicket.candle_surface_height == values["candle_surface_height"],
+                    IPQCTicket.standard_wick_length == values["standard_wick_length"],
+                )
+                if duplicate_query.first():
+                    continue
+            updated_at_value = row.get("updated_at")
+            updated_at = datetime.fromisoformat(str(updated_at_value).replace("Z", "")) if updated_at_value else created_at
+            ticket = IPQCTicket(
+                item_id=item.id,
+                **values,
+                created_by=row.get("created_by"),
+                created_at=created_at,
+                updated_by=row.get("updated_by"),
+                updated_at=_database_datetime(updated_at),
+            )
+            db.add(ticket)
+            restored_ipqc_tickets += 1
+        except (ValueError, TypeError, KeyError):
+            errors += 1
+
     try:
         db.commit()
     except Exception as e:
@@ -1738,6 +1861,7 @@ async def restore_database(
         "inserted": inserted,
         "updated": updated,
         "restored_scale_tickets": restored_tickets,
+        "restored_ipqc_tickets": restored_ipqc_tickets,
         "errors": errors,
         "message": f"Restore OK ({mode}): {inserted} new, {updated} updated" + (f", cleared {deleted}" if deleted else ""),
     }
