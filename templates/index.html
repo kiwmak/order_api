@@ -1385,6 +1385,7 @@
       </div>
       <div class="modal-body">
         <div id="scaleTicket"></div>
+        <div id="ipqcForm" style="display:none;"></div>
         <div class="detail-grid" id="detailGrid"></div>
         <div id="scaleHistory"></div>
         <div id="editForm" style="display:none;"></div>
@@ -2361,7 +2362,11 @@ document.getElementById("searchInput").placeholder = t("search");
         document.getElementById("scaleTicketBtn").style.display = "none";
         document.getElementById("realScaleTicketBtn").style.display = "none";
         document.getElementById("ipqcTicketBtn").style.display = "none";
+        document.getElementById("ipqcForm").style.display = "none";
+        document.getElementById("ipqcForm").innerHTML = "";
         document.getElementById("scaleTicket").innerHTML = "";
+        document.getElementById("scaleTicket").style.display = "";
+        document.getElementById("scaleHistory").style.display = "";
         document.getElementById("scaleHistory").innerHTML = "";
         document.getElementById("modalTitle").textContent = `${orderNumber} · ${items.length} mã`;
         document.getElementById("detailGrid").style.display = "";
@@ -2432,7 +2437,11 @@ document.getElementById("searchInput").placeholder = t("search");
       document.getElementById("scaleTicketBtn").style.display = "";
       document.getElementById("realScaleTicketBtn").style.display = "";
       document.getElementById("ipqcTicketBtn").style.display = "";
+      document.getElementById("ipqcForm").style.display = "none";
+      document.getElementById("ipqcForm").innerHTML = "";
       document.getElementById("scaleTicket").innerHTML = "";
+      document.getElementById("scaleTicket").style.display = "";
+      document.getElementById("scaleHistory").style.display = "";
       document.getElementById("scaleHistory").innerHTML = "";
       const code = o.item_code || "—";
       const ord = o.order_number || "—";
@@ -2963,13 +2972,102 @@ document.getElementById("searchInput").placeholder = t("search");
       }
     }
 
-    async function exportIPQCTicket() {
+    async function openIPQCForm() {
       if (currentDetailId == null) return;
       const label = (vi, en, zh) => lang === "zh" ? zh : lang === "en" ? en : vi;
       const button = document.getElementById("ipqcTicketBtn");
+      button.disabled = true;
+      try {
+        const res = await authFetch(`/api/orders/${currentDetailId}/ipqc`);
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.detail || "Could not load IPQC form");
+        }
+        const saved = await res.json();
+        const item = orders.find(order => order.id === currentDetailId) || {};
+        const form = document.getElementById("ipqcForm");
+        const fields = [
+          ["wick_count", label("Số sợi tạo bấc nến", "Wick strands", "灯芯股数"), saved.wick_count],
+          ["temperature", label("Nhiệt độ", "Temperature", "温度"), saved.temperature],
+          ["candle_surface_height", label("Độ cao mặt nến", "Candle surface height", "蜡面高度"), saved.candle_surface_height],
+          ["standard_wick_length", label("Chiều dài bấc tiêu chuẩn", "Standard wick length", "标准灯芯长度"), saved.standard_wick_length],
+        ];
+        document.getElementById("detailGrid").style.display = "none";
+        document.getElementById("scaleHistory").style.display = "none";
+        document.getElementById("scaleTicket").style.display = "none";
+        document.getElementById("scaleTicket").innerHTML = "";
+        document.getElementById("editForm").style.display = "none";
+        document.getElementById("editActions").style.display = "none";
+        document.getElementById("editBtn").style.display = "none";
+        document.getElementById("deleteItemBtn").style.display = "none";
+        document.getElementById("scaleTicketBtn").style.display = "none";
+        document.getElementById("realScaleTicketBtn").style.display = "none";
+        button.style.display = "none";
+        form.style.display = "";
+        form.innerHTML = `
+          <section class="detail-section" style="margin-bottom:1.25rem;">
+            <div class="detail-section-title"><span class="icon">📝</span> ${label("Thông tin phiếu đi chuyền", "IPQC ticket details", "巡检表信息")}</div>
+            <div style="color:var(--muted);font-size:0.85rem;margin-bottom:0.85rem;">
+              ${label("Mã hàng", "Item", "货号")}: ${esc(item.item_code || "—")} · ${label("Đơn hàng", "Order", "订单")}: ${esc(item.order_number || "—")}
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.85rem;">
+              ${fields.map(([name, title, value]) => `
+                <label style="font-size:0.85rem;">${title}
+                  <input class="search-box" type="text" maxlength="200" data-ipqc-field="${name}" value="${esc(value || "")}" style="width:100%;margin-top:0.3rem;" />
+                </label>`).join("")}
+            </div>
+            <div class="toolbar" style="margin-top:1rem;margin-bottom:0;">
+              <button type="button" class="btn btn-primary" id="ipqcSaveBtn">${label("Lưu thông tin", "Save details", "保存信息")}</button>
+              <button type="button" class="btn btn-primary" id="ipqcExportBtn">${label("Xuất Excel", "Export Excel", "导出 Excel")}</button>
+              <button type="button" class="btn btn-ghost" id="ipqcBackBtn">${label("Quay lại", "Back", "返回")}</button>
+            </div>
+          </section>`;
+        document.getElementById("ipqcSaveBtn").addEventListener("click", async () => {
+          try {
+            await saveIPQCForm();
+            showToast(label("Đã lưu thông tin phiếu.", "Ticket details saved.", "表单信息已保存。"), "success");
+          } catch (error) {
+            showToast(error.message || label("Không thể lưu thông tin phiếu.", "Could not save ticket details.", "无法保存表单信息。"), "error");
+          }
+        });
+        document.getElementById("ipqcExportBtn").addEventListener("click", exportIPQCTicket);
+        document.getElementById("ipqcBackBtn").addEventListener("click", closeIPQCForm);
+      } catch (error) {
+        showToast(error.message || label("Không thể mở biểu mẫu.", "Could not open the form.", "无法打开表单。"), "error");
+      } finally {
+        if (button.isConnected) button.disabled = false;
+      }
+    }
+
+    async function saveIPQCForm() {
+      const button = document.getElementById("ipqcSaveBtn");
+      const payload = {};
+      document.querySelectorAll("#ipqcForm [data-ipqc-field]").forEach(input => {
+        payload[input.dataset.ipqcField] = input.value.trim();
+      });
+      button.disabled = true;
+      try {
+        const res = await authFetch(`/api/orders/${currentDetailId}/ipqc`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || "Could not save IPQC details");
+        return data;
+      } finally {
+        if (button.isConnected) button.disabled = false;
+      }
+    }
+
+    async function exportIPQCTicket() {
+      if (currentDetailId == null) return;
+      const label = (vi, en, zh) => lang === "zh" ? zh : lang === "en" ? en : vi;
+      const button = document.getElementById("ipqcExportBtn");
       const item = orders.find(order => order.id === currentDetailId);
       button.disabled = true;
       try {
+        await saveIPQCForm();
         const res = await authFetch(`/api/orders/${currentDetailId}/ipqc/export`);
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
@@ -2985,6 +3083,7 @@ document.getElementById("searchInput").placeholder = t("search");
         link.click();
         link.remove();
         URL.revokeObjectURL(url);
+        showToast(label("Đã lưu và xuất phiếu Excel.", "Saved and exported the Excel ticket.", "已保存并导出 Excel 表单。"), "success");
       } catch (error) {
         showToast(error.message || label("Không thể tạo phiếu đi chuyền.", "Could not create the IPQC ticket.", "无法创建巡检表。"), "error");
       } finally {
@@ -2992,7 +3091,18 @@ document.getElementById("searchInput").placeholder = t("search");
       }
     }
 
-    document.getElementById("ipqcTicketBtn").addEventListener("click", exportIPQCTicket);
+    function closeIPQCForm() {
+      document.getElementById("ipqcForm").style.display = "none";
+      document.getElementById("ipqcForm").innerHTML = "";
+      document.getElementById("scaleTicket").style.display = "";
+      document.getElementById("detailGrid").style.display = "";
+      document.getElementById("scaleHistory").style.display = "";
+      document.getElementById("ipqcTicketBtn").style.display = "";
+      document.getElementById("scaleTicketBtn").style.display = "";
+      applyAuthUI();
+    }
+
+    document.getElementById("ipqcTicketBtn").addEventListener("click", openIPQCForm);
 
     function startEdit() {
       if (!isLoggedIn() || currentDetailId == null) return;
@@ -3002,6 +3112,7 @@ document.getElementById("searchInput").placeholder = t("search");
       document.getElementById("scaleTicketBtn").style.display = "none";
       document.getElementById("realScaleTicketBtn").style.display = "none";
       document.getElementById("ipqcTicketBtn").style.display = "none";
+      document.getElementById("ipqcForm").style.display = "none";
       document.getElementById("scaleTicket").innerHTML = "";
       document.getElementById("detailGrid").style.display = "none";
       const form = document.getElementById("editForm");

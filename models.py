@@ -114,6 +114,18 @@ class ScaleTicket(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+class IPQCTicket(Base):
+    __tablename__ = "ipqc_tickets"
+
+    item_id = Column(Integer, primary_key=True)
+    wick_count = Column(String(200), nullable=True)
+    temperature = Column(String(200), nullable=True)
+    candle_surface_height = Column(String(200), nullable=True)
+    standard_wick_length = Column(String(200), nullable=True)
+    updated_by = Column(String(100), nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class UserAccount(Base):
     __tablename__ = "user_accounts"
     __table_args__ = (

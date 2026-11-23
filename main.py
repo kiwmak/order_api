@@ -28,7 +28,7 @@ from openpyxl.cell.cell import MergedCell
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from models import init_db, get_db, OrderItem, ScaleTicket, UserAccount, SessionLocal
+from models import init_db, get_db, OrderItem, ScaleTicket, IPQCTicket, UserAccount, SessionLocal
 from importer import parse_excel, rows_to_models
 from translations import FIELD_LABELS, UI_TEXT
 from auth import (
@@ -241,6 +241,22 @@ class ScaleTicketUIInput(BaseModel):
     pour2_max: int = Field(ge=0)
     readings: List[ScaleTicketUIReading]
     notes: Optional[str] = Field(None, max_length=2000)
+
+
+class IPQCTicketUpdate(BaseModel):
+    wick_count: Optional[str] = Field(None, max_length=200)
+    temperature: Optional[str] = Field(None, max_length=200)
+    candle_surface_height: Optional[str] = Field(None, max_length=200)
+    standard_wick_length: Optional[str] = Field(None, max_length=200)
+
+
+class IPQCTicketOut(BaseModel):
+    item_id: int
+    wick_count: str = ""
+    temperature: str = ""
+    candle_surface_height: str = ""
+    standard_wick_length: str = ""
+    updated_at: Optional[datetime] = None
 
 
 class ScaleTicketOut(BaseModel):
@@ -1168,6 +1184,58 @@ def export_order_scale_ticket(
     )
 
 
+@app.get("/api/orders/{item_id}/ipqc", response_model=IPQCTicketOut)
+def get_order_ipqc(
+    item_id: int,
+    db: Session = Depends(get_db),
+    user: str = Depends(require_roles("admin", "staff", "viewer")),
+):
+    item = db.query(OrderItem).filter(OrderItem.id == item_id).first()
+    if not item:
+        raise HTTPException(404, "Order item not found")
+    ticket = db.query(IPQCTicket).filter(IPQCTicket.item_id == item_id).first()
+    return {
+        "item_id": item_id,
+        "wick_count": ticket.wick_count or "" if ticket else "",
+        "temperature": ticket.temperature or "" if ticket else "",
+        "candle_surface_height": ticket.candle_surface_height or "" if ticket else "",
+        "standard_wick_length": ticket.standard_wick_length or "" if ticket else "",
+        "updated_at": ticket.updated_at if ticket else None,
+    }
+
+
+@app.put("/api/orders/{item_id}/ipqc", response_model=IPQCTicketOut)
+def save_order_ipqc(
+    item_id: int,
+    body: IPQCTicketUpdate,
+    db: Session = Depends(get_db),
+    user: str = Depends(require_roles("admin", "staff", "viewer")),
+):
+    item = db.query(OrderItem).filter(OrderItem.id == item_id).first()
+    if not item:
+        raise HTTPException(404, "Order item not found")
+    ticket = db.query(IPQCTicket).filter(IPQCTicket.item_id == item_id).first()
+    if ticket is None:
+        ticket = IPQCTicket(item_id=item_id)
+        db.add(ticket)
+    ticket.wick_count = body.wick_count or ""
+    ticket.temperature = body.temperature or ""
+    ticket.candle_surface_height = body.candle_surface_height or ""
+    ticket.standard_wick_length = body.standard_wick_length or ""
+    ticket.updated_by = user
+    ticket.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(ticket)
+    return {
+        "item_id": item_id,
+        "wick_count": ticket.wick_count or "",
+        "temperature": ticket.temperature or "",
+        "candle_surface_height": ticket.candle_surface_height or "",
+        "standard_wick_length": ticket.standard_wick_length or "",
+        "updated_at": ticket.updated_at,
+    }
+
+
 @app.get("/api/orders/{item_id}/ipqc/export")
 def export_order_ipqc(
     item_id: int,
@@ -1177,6 +1245,7 @@ def export_order_ipqc(
     item = db.query(OrderItem).filter(OrderItem.id == item_id).first()
     if not item:
         raise HTTPException(404, "Order item not found")
+    ticket = db.query(IPQCTicket).filter(IPQCTicket.item_id == item_id).first()
 
     template_path = os.path.join(STATIC_DIR, "templates", "ipqc_template.xlsx")
     if not os.path.exists(template_path):
@@ -1200,6 +1269,11 @@ def export_order_ipqc(
         sheet["F22"] = f"{item.unit_wax_weight_g:g}g"
     if item.container_size:
         sheet["F26"] = item.container_size
+    if ticket:
+        sheet["F20"] = ticket.wick_count or ""
+        sheet["F21"] = ticket.temperature or ""
+        sheet["F23"] = ticket.candle_surface_height or ""
+        sheet["F25"] = ticket.standard_wick_length or ""
 
     for row in range(6, 26):
         for column in range(8, 12):
